@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
-import { Copy, Download, RotateCcw, AlertCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Copy, Download, RotateCcw, AlertCircle, Keyboard } from "lucide-react";
 import { Header } from "@/components/Header";
 import { MicButton } from "@/components/MicButton";
 import { Waveform } from "@/components/Waveform";
 import { PdfDialog } from "@/components/PdfDialog";
+import { TamilKeyboard } from "@/components/TamilKeyboard";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useTamilSpeech } from "@/hooks/useTamilSpeech";
@@ -12,6 +13,9 @@ import { toast } from "@/hooks/use-toast";
 const Index = () => {
   const [pdfOpen, setPdfOpen] = useState(false);
   const [showProcessing, setShowProcessing] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const cursorRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
 
   const {
     isListening,
@@ -68,30 +72,99 @@ const Index = () => {
     }
   };
 
+  // Track cursor position as user moves through the textarea
+  const captureCursor = () => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    cursorRef.current = {
+      start: ta.selectionStart ?? transcript.length,
+      end: ta.selectionEnd ?? transcript.length,
+    };
+  };
+
+  // Insert text at the current cursor position; restore cursor + focus
+  const insertAtCursor = (text: string) => {
+    const ta = textareaRef.current;
+    const { start, end } = cursorRef.current;
+    const safeStart = Math.min(start, transcript.length);
+    const safeEnd = Math.min(end, transcript.length);
+    const next = transcript.slice(0, safeStart) + text + transcript.slice(safeEnd);
+    setTranscript(next);
+    const newPos = safeStart + text.length;
+    cursorRef.current = { start: newPos, end: newPos };
+    requestAnimationFrame(() => {
+      if (ta) {
+        ta.focus({ preventScroll: true });
+        ta.setSelectionRange(newPos, newPos);
+      }
+    });
+  };
+
+  const handleBackspace = () => {
+    const { start, end } = cursorRef.current;
+    const ta = textareaRef.current;
+    if (start === end && start > 0) {
+      const next = transcript.slice(0, start - 1) + transcript.slice(end);
+      setTranscript(next);
+      const newPos = start - 1;
+      cursorRef.current = { start: newPos, end: newPos };
+      requestAnimationFrame(() => {
+        if (ta) {
+          ta.focus({ preventScroll: true });
+          ta.setSelectionRange(newPos, newPos);
+        }
+      });
+    } else if (start !== end) {
+      const next = transcript.slice(0, start) + transcript.slice(end);
+      setTranscript(next);
+      cursorRef.current = { start, end: start };
+      requestAnimationFrame(() => {
+        if (ta) {
+          ta.focus({ preventScroll: true });
+          ta.setSelectionRange(start, start);
+        }
+      });
+    }
+  };
+
+  const openKeyboard = () => {
+    captureCursor();
+    // If textarea hasn't been focused yet, default to end of text
+    if (cursorRef.current.start === 0 && cursorRef.current.end === 0 && transcript.length > 0) {
+      cursorRef.current = { start: transcript.length, end: transcript.length };
+    }
+    setKeyboardOpen(true);
+  };
+
   return (
-    <div className="min-h-screen pb-16">
+    <div className="relative min-h-screen pb-24">
       <Header />
 
-      <main className="container mt-8 max-w-4xl space-y-8">
+      <main className="container mt-6 max-w-4xl space-y-6 sm:mt-8 sm:space-y-8">
         {/* Mic + status card */}
-        <section className="palm-card relative float-in overflow-hidden p-6 sm:p-10">
-          <div className="flex flex-col items-center gap-6">
+        <section className="palm-card float-in overflow-hidden p-5 sm:p-10">
+          <div className="flex flex-col items-center gap-5 sm:gap-6">
             <div className="text-center">
               <h2 className="font-tamil text-2xl font-bold text-palm-dark sm:text-3xl">
                 {isListening ? "கேட்கிறேன்..." : "உங்கள் குரலைப் பதிவு செய்யுங்கள்"}
               </h2>
               <p className="mt-2 font-tamil text-sm text-muted-foreground sm:text-base">
                 {isListening
-                  ? "தமிழில் பேசுங்கள் • புதிய வரிக்கு \"அடுத்தவரி\" எனச் சொல்லுங்கள்"
+                  ? 'தமிழில் பேசுங்கள் • புதிய வரிக்கு "அடுத்தவரி" எனச் சொல்லுங்கள்'
                   : "மைக்கை அழுத்தி தமிழில் பேசத் தொடங்குங்கள்"}
               </p>
             </div>
 
             {!isSupported && (
-              <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                <AlertCircle className="h-4 w-4" />
-                <span className="font-tamil">
-                  உங்கள் உலாவி ஆதரிக்கவில்லை. Google Chrome ஐ பயன்படுத்தவும்.
+              <div className="flex flex-col items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span className="font-tamil">
+                    குரல் உள்ளீடு ஆதரிக்கப்படவில்லை. தயவுசெய்து தமிழ் விசைப்பலகையைப் பயன்படுத்தவும்.
+                  </span>
+                </div>
+                <span className="text-xs opacity-80">
+                  Voice input not supported. Please use Tamil keyboard.
                 </span>
               </div>
             )}
@@ -119,7 +192,7 @@ const Index = () => {
         </section>
 
         {/* Transcript editor */}
-        <section className="palm-card relative float-in p-5 sm:p-8">
+        <section className="palm-card float-in p-4 sm:p-8">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="font-tamil text-xl font-bold text-palm-dark sm:text-2xl">
@@ -137,7 +210,7 @@ const Index = () => {
                   reset();
                   toast({ title: "அழிக்கப்பட்டது" });
                 }}
-                className="border-palm-gold/40 font-tamil text-palm-dark hover:bg-palm-gold/10"
+                className="border-palm-gold/40 font-tamil text-palm-dark hover:bg-palm-gold/15"
               >
                 <RotateCcw className="mr-1.5 h-4 w-4" /> அழி
               </Button>
@@ -145,7 +218,7 @@ const Index = () => {
                 variant="outline"
                 size="sm"
                 onClick={handleCopy}
-                className="border-palm-gold/40 font-tamil text-palm-dark hover:bg-palm-gold/10"
+                className="border-palm-gold/40 font-tamil text-palm-dark hover:bg-palm-gold/15"
               >
                 <Copy className="mr-1.5 h-4 w-4" /> நகலெடு
               </Button>
@@ -154,20 +227,37 @@ const Index = () => {
                 onClick={() => setPdfOpen(true)}
                 className="bg-gradient-gold font-tamil text-primary-foreground hover:opacity-90"
               >
-                <Download className="mr-1.5 h-4 w-4" /> PDF பதிவிறக்கு
+                <Download className="mr-1.5 h-4 w-4" /> PDF
               </Button>
             </div>
           </div>
 
+          {/* Tamil keyboard trigger */}
+          <div className="mb-3 flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openKeyboard}
+              className="border-accent/50 bg-accent/10 font-tamil text-accent hover:bg-accent/20"
+            >
+              <Keyboard className="mr-1.5 h-4 w-4" /> தமிழ் விசைப்பலகை
+            </Button>
+          </div>
+
           <div className="relative">
             <Textarea
+              ref={textareaRef}
               value={transcript + (interim ? (transcript && !transcript.endsWith("\n") ? " " : "") + interim : "")}
               onChange={(e) => setTranscript(e.target.value)}
+              onSelect={captureCursor}
+              onKeyUp={captureCursor}
+              onClick={captureCursor}
+              onBlur={captureCursor}
               placeholder="உங்கள் உரை இங்கே தோன்றும்..."
-              className="min-h-[320px] resize-y border-palm-gold/30 bg-background/40 font-tamil text-lg leading-relaxed text-ink shadow-inner placeholder:text-muted-foreground/60 focus-visible:ring-palm-gold/50 sm:text-xl sm:leading-loose"
+              className="min-h-[280px] resize-y scroll-smooth border-palm-gold/40 bg-card/70 font-tamil text-lg leading-relaxed text-ink shadow-inner placeholder:text-muted-foreground/60 focus-visible:ring-palm-gold/50 sm:text-xl sm:leading-loose"
               style={{
                 backgroundImage:
-                  "repeating-linear-gradient(transparent, transparent 38px, hsl(var(--palm-gold) / 0.18) 38px, hsl(var(--palm-gold) / 0.18) 39px)",
+                  "repeating-linear-gradient(transparent, transparent 38px, hsl(var(--palm-gold) / 0.22) 38px, hsl(var(--palm-gold) / 0.22) 39px)",
               }}
             />
             {interim && (
@@ -184,7 +274,38 @@ const Index = () => {
         </section>
       </main>
 
+      {/* Sticky mobile mic — quick access while scrolling the transcript */}
+      <button
+        onClick={handleMic}
+        disabled={!isSupported}
+        aria-label={isListening ? "பதிவை நிறுத்து" : "மீண்டும் தொடங்கு"}
+        className={`fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full text-primary-foreground shadow-[var(--shadow-deep)] transition-transform active:scale-95 disabled:opacity-50 sm:hidden ${
+          isListening ? "mic-recording" : "mic-button"
+        }`}
+      >
+        {isListening ? (
+          <span className="h-4 w-4 rounded-sm bg-current" />
+        ) : (
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            className="h-6 w-6"
+          >
+            <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z" />
+          </svg>
+        )}
+      </button>
+
       <PdfDialog open={pdfOpen} onOpenChange={setPdfOpen} transcript={transcript} />
+
+      <TamilKeyboard
+        open={keyboardOpen}
+        onClose={() => setKeyboardOpen(false)}
+        onInsert={insertAtCursor}
+        onBackspace={handleBackspace}
+        onEnter={() => insertAtCursor("\n")}
+      />
     </div>
   );
 };
