@@ -106,10 +106,11 @@
   }
 
   .palm-card {
+    position: relative;
     background: var(--gradient-parchment);
     background-image: url('/src/assets/palm-texture.jpg');
     background-size: cover;
-    background-blend-mode: multiply;
+    background-blend-mode: lighten;
     background-color: hsl(var(--card));
     border: 1px solid hsl(var(--border));
     box-shadow: var(--shadow-leaf), var(--shadow-inset);
@@ -121,8 +122,13 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    background: radial-gradient(ellipse at center, transparent 40%, hsl(25 55% 22% / 0.12) 100%);
+    background: hsl(var(--card) / 0.55);
     border-radius: inherit;
+  }
+
+  .palm-card > * {
+    position: relative;
+    z-index: 1;
   }
 
   .ornate-border {
