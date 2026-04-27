@@ -2,15 +2,28 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 interface UseTamilSpeechOptions {
   onError?: (message: string) => void;
+  /** Called once for every FINAL chunk produced by the recognizer. */
+  onFinalText?: (chunk: string) => void;
+  /** Called when a ~2s silence pause is detected (debounced, fires once per pause). */
+  onPause?: () => void;
 }
 
 /**
  * Tamil speech recognition hook.
- * - Replaces "அடுத்தவரி" with newline.
- * - Inserts newline after ~2s pause.
- * - After every 4 lines, inserts an empty line.
+ *
+ * Responsibilities (kept minimal & stable):
+ *  - Start / stop Web Speech API in ta-IN.
+ *  - Emit ONLY final results via onFinalText (interim is exposed read-only for UI hints).
+ *  - Debounced onPause callback (single fire per silence window).
+ *
+ * Text shaping (cursor insertion, line rules, dedup) is handled by the consumer
+ * so it can target the actual cursor position in the textarea.
  */
-export function useTamilSpeech({ onError }: UseTamilSpeechOptions = {}) {
+export function useTamilSpeech({
+  onError,
+  onFinalText,
+  onPause,
+}: UseTamilSpeechOptions = {}) {
   const [isListening, setIsListening] = useState(false);
   const [isSupported, setIsSupported] = useState(true);
   const [interim, setInterim] = useState("");
@@ -18,9 +31,20 @@ export function useTamilSpeech({ onError }: UseTamilSpeechOptions = {}) {
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const pauseTimerRef = useRef<number | null>(null);
-  const lastFinalAtRef = useRef<number>(0);
-  // Track a stable line counter for "every 4 lines insert empty line"
-  const lineCounterRef = useRef<number>(0);
+  const pauseFiredRef = useRef<boolean>(true);
+  // Track the highest result index we've already committed to avoid duplicates
+  // if the recognizer re-delivers the same final result.
+  const processedUpToRef = useRef<number>(-1);
+
+  // Stable refs to latest callbacks so we don't rebuild handlers each render.
+  const onFinalRef = useRef(onFinalText);
+  const onPauseRef = useRef(onPause);
+  const onErrorRef = useRef(onError);
+  useEffect(() => {
+    onFinalRef.current = onFinalText;
+    onPauseRef.current = onPause;
+    onErrorRef.current = onError;
+  }, [onFinalText, onPause, onError]);
 
   useEffect(() => {
     const SR =
@@ -45,69 +69,28 @@ export function useTamilSpeech({ onError }: UseTamilSpeechOptions = {}) {
     }
   };
 
-  const appendFinal = useCallback((chunk: string) => {
-    setTranscript((prev) => {
-      let cleaned = chunk.trim();
-      if (!cleaned) return prev;
-
-      // Replace the keyword "அடுத்தவரி" with a newline marker
-      cleaned = cleaned.replace(/\s*அடுத்தவரி\s*/g, "\n");
-
-      let next = prev;
-      if (next && !next.endsWith("\n") && !next.endsWith(" ")) {
-        next += " ";
-      }
-      next += cleaned;
-
-      // Normalize: remove triple+ newlines
-      next = next.replace(/\n{3,}/g, "\n\n");
-
-      // Apply "every 4 lines, add empty line" rule based on non-empty line count
-      const lines = next.split("\n");
-      const rebuilt: string[] = [];
-      let nonEmptyCount = 0;
-      for (let i = 0; i < lines.length; i++) {
-        const l = lines[i];
-        rebuilt.push(l);
-        if (l.trim().length > 0) {
-          nonEmptyCount++;
-          const isLast = i === lines.length - 1;
-          const nextLine = lines[i + 1];
-          if (
-            nonEmptyCount % 4 === 0 &&
-            !isLast &&
-            nextLine !== "" &&
-            nextLine?.trim().length !== 0
-          ) {
-            rebuilt.push("");
-          }
-        }
-      }
-      lineCounterRef.current = nonEmptyCount;
-      return rebuilt.join("\n");
-    });
-  }, []);
-
-  const schedulePauseLineBreak = useCallback(() => {
+  const schedulePause = useCallback(() => {
     clearPauseTimer();
+    pauseFiredRef.current = false;
     pauseTimerRef.current = window.setTimeout(() => {
-      setTranscript((prev) => {
-        if (!prev) return prev;
-        if (prev.endsWith("\n")) return prev;
-        return prev + "\n";
-      });
+      if (!pauseFiredRef.current) {
+        pauseFiredRef.current = true;
+        onPauseRef.current?.();
+      }
     }, 2000);
   }, []);
 
   const start = useCallback(() => {
     const rec = recognitionRef.current;
     if (!rec) {
-      onError?.("உங்கள் உலாவி குரல் அறிதலை ஆதரிக்கவில்லை. Chrome ஐ பயன்படுத்தவும்.");
+      onErrorRef.current?.(
+        "உங்கள் உலாவி குரல் அறிதலை ஆதரிக்கவில்லை. Chrome ஐ பயன்படுத்தவும்."
+      );
       return;
     }
     try {
       setInterim("");
-      lastFinalAtRef.current = Date.now();
+      processedUpToRef.current = -1;
 
       rec.onstart = () => setIsListening(true);
       rec.onend = () => {
@@ -118,11 +101,11 @@ export function useTamilSpeech({ onError }: UseTamilSpeechOptions = {}) {
       rec.onerror = (e: SpeechRecognitionErrorEvent) => {
         if (e.error === "no-speech") return;
         if (e.error === "not-allowed") {
-          onError?.("மைக்ரோஃபோன் அனுமதி மறுக்கப்பட்டது.");
+          onErrorRef.current?.("மைக்ரோஃபோன் அனுமதி மறுக்கப்பட்டது.");
         } else if (e.error === "audio-capture") {
-          onError?.("மைக்ரோஃபோன் கிடைக்கவில்லை.");
+          onErrorRef.current?.("மைக்ரோஃபோன் கிடைக்கவில்லை.");
         } else {
-          onError?.(`பிழை: ${e.error}`);
+          onErrorRef.current?.(`பிழை: ${e.error}`);
         }
       };
       rec.onresult = (event: SpeechRecognitionEvent) => {
@@ -131,22 +114,26 @@ export function useTamilSpeech({ onError }: UseTamilSpeechOptions = {}) {
           const result = event.results[i];
           const text = result[0].transcript;
           if (result.isFinal) {
-            appendFinal(text);
-            lastFinalAtRef.current = Date.now();
-            schedulePauseLineBreak();
+            // Guard against the same final index being emitted twice.
+            if (i > processedUpToRef.current) {
+              processedUpToRef.current = i;
+              const cleaned = text.replace(/\s+/g, " ").trim();
+              if (cleaned) onFinalRef.current?.(cleaned);
+            }
           } else {
             interimText += text;
           }
         }
         setInterim(interimText);
-        if (interimText) schedulePauseLineBreak();
+        // Any activity (interim or final) restarts the pause window.
+        schedulePause();
       };
       rec.start();
     } catch (err) {
       console.error(err);
-      onError?.("குரல் அறிதலைத் தொடங்க முடியவில்லை.");
+      onErrorRef.current?.("குரல் அறிதலைத் தொடங்க முடியவில்லை.");
     }
-  }, [appendFinal, onError, schedulePauseLineBreak]);
+  }, [schedulePause]);
 
   const stop = useCallback(() => {
     recognitionRef.current?.stop();
@@ -156,13 +143,16 @@ export function useTamilSpeech({ onError }: UseTamilSpeechOptions = {}) {
   const reset = useCallback(() => {
     setTranscript("");
     setInterim("");
-    lineCounterRef.current = 0;
+    processedUpToRef.current = -1;
   }, []);
 
-  useEffect(() => () => {
-    clearPauseTimer();
-    recognitionRef.current?.abort();
-  }, []);
+  useEffect(
+    () => () => {
+      clearPauseTimer();
+      recognitionRef.current?.abort();
+    },
+    []
+  );
 
   return {
     isListening,

@@ -17,6 +17,11 @@ const Index = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const cursorRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
 
+  // Forward refs so speech callbacks can read the latest transcript/cursor
+  // without recreating the hook every keystroke.
+  const transcriptRef = useRef("");
+  const insertAtCursorRef = useRef<(text: string) => void>(() => {});
+
   const {
     isListening,
     isSupported,
@@ -29,7 +34,39 @@ const Index = () => {
   } = useTamilSpeech({
     onError: (msg) =>
       toast({ title: "பிழை", description: msg, variant: "destructive" }),
+    onFinalText: (chunk) => {
+      // Replace the line-break keyword with a real newline.
+      // Collapse any whitespace produced by trimming the keyword.
+      let out = chunk.replace(/\s*அடுத்தவரி\s*/g, "\n");
+      out = out.replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").trim();
+      if (!out) return;
+
+      // Dedup: if the exact phrase already sits immediately before the cursor,
+      // skip it (guards against engines re-firing the same final result).
+      const current = transcriptRef.current;
+      const tail = current.slice(Math.max(0, current.length - out.length));
+      if (tail === out) return;
+
+      // Add a single leading space if we're continuing a word (no newline / space).
+      const needsSpace =
+        current.length > 0 &&
+        !current.endsWith("\n") &&
+        !current.endsWith(" ") &&
+        !out.startsWith("\n");
+      insertAtCursorRef.current(needsSpace ? " " + out : out);
+    },
+    onPause: () => {
+      // Single newline per silence window — only if we aren't already on a fresh line.
+      const current = transcriptRef.current;
+      if (!current || current.endsWith("\n")) return;
+      insertAtCursorRef.current("\n");
+    },
   });
+
+  // Keep the latest transcript available to the speech callbacks.
+  useEffect(() => {
+    transcriptRef.current = transcript;
+  }, [transcript]);
 
   // Show a brief processing indicator after stopping
   useEffect(() => {
@@ -82,15 +119,43 @@ const Index = () => {
     };
   };
 
-  // Insert text at the current cursor position; restore cursor + focus
+  // Insert text at the current cursor position; restore cursor + focus.
+  // Also enforces the "blank line after every 4 non-empty lines" rule
+  // by inspecting the surrounding text — never double-inserts.
   const insertAtCursor = (text: string) => {
     const ta = textareaRef.current;
+    const current = transcriptRef.current;
     const { start, end } = cursorRef.current;
-    const safeStart = Math.min(start, transcript.length);
-    const safeEnd = Math.min(end, transcript.length);
-    const next = transcript.slice(0, safeStart) + text + transcript.slice(safeEnd);
+    const safeStart = Math.min(start, current.length);
+    const safeEnd = Math.min(end, current.length);
+
+    let before = current.slice(0, safeStart);
+    const after = current.slice(safeEnd);
+    let insertion = text;
+
+    // 4-line rule: only when we just completed a line (insertion ends with \n,
+    // or we're inserting a newline). Count non-empty lines in `before + insertion`.
+    if (insertion.endsWith("\n")) {
+      const combined = before + insertion;
+      const lines = combined.split("\n");
+      // Last element is "" because of trailing \n; count non-empty lines before it.
+      const nonEmpty = lines.slice(0, -1).filter((l) => l.trim().length > 0).length;
+      const alreadyBlank = combined.endsWith("\n\n");
+      const nextStartsBlank = after.startsWith("\n");
+      if (
+        nonEmpty > 0 &&
+        nonEmpty % 4 === 0 &&
+        !alreadyBlank &&
+        !nextStartsBlank
+      ) {
+        insertion += "\n";
+      }
+    }
+
+    const next = before + insertion + after;
     setTranscript(next);
-    const newPos = safeStart + text.length;
+    transcriptRef.current = next;
+    const newPos = safeStart + insertion.length;
     cursorRef.current = { start: newPos, end: newPos };
     requestAnimationFrame(() => {
       if (ta) {
@@ -99,6 +164,11 @@ const Index = () => {
       }
     });
   };
+
+  // Expose the latest insertAtCursor to the speech hook callbacks.
+  useEffect(() => {
+    insertAtCursorRef.current = insertAtCursor;
+  });
 
   const handleBackspace = () => {
     const { start, end } = cursorRef.current;
@@ -247,7 +317,7 @@ const Index = () => {
           <div className="relative">
             <Textarea
               ref={textareaRef}
-              value={transcript + (interim ? (transcript && !transcript.endsWith("\n") ? " " : "") + interim : "")}
+              value={transcript}
               onChange={(e) => setTranscript(e.target.value)}
               onSelect={captureCursor}
               onKeyUp={captureCursor}
@@ -261,9 +331,14 @@ const Index = () => {
               }}
             />
             {interim && (
-              <span className="pointer-events-none absolute bottom-3 right-4 rounded-full bg-accent/20 px-2 py-0.5 text-xs font-tamil text-accent">
-                live
-              </span>
+              <div className="pointer-events-none absolute bottom-3 left-4 right-4 flex items-end justify-between gap-2">
+                <span className="truncate rounded-md bg-card/85 px-2 py-1 font-tamil text-sm text-muted-foreground italic shadow-sm">
+                  {interim}
+                </span>
+                <span className="rounded-full bg-accent/20 px-2 py-0.5 text-xs font-tamil text-accent">
+                  live
+                </span>
+              </div>
             )}
           </div>
 
