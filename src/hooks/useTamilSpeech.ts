@@ -96,7 +96,8 @@ export function useTamilSpeech({
       rec.onend = () => {
         setIsListening(false);
         setInterim("");
-        clearPauseTimer();
+        // Do NOT clear the pause timer here — a natural end IS a pause and
+        // should still let the silence callback fire once.
       };
       rec.onerror = (e: SpeechRecognitionErrorEvent) => {
         if (e.error === "no-speech") return;

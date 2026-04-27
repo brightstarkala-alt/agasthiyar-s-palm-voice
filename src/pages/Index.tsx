@@ -35,17 +35,22 @@ const Index = () => {
     onError: (msg) =>
       toast({ title: "பிழை", description: msg, variant: "destructive" }),
     onFinalText: (chunk) => {
-      // Replace the line-break keyword with a real newline.
-      // Collapse any whitespace produced by trimming the keyword.
-      let out = chunk.replace(/\s*அடுத்தவரி\s*/g, "\n");
-      out = out.replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").trim();
+      // Detect the line-break keyword in all common variants the
+      // recognizer might emit: "அடுத்தவரி", "அடுத்த வரி", "அடுத்தவரீ", etc.
+      // Replace each occurrence with a real newline and STRIP the word itself.
+      const NEWLINE_RE = /\s*அடுத்த\s*வரி[ிீ]?\s*/g;
+      let out = chunk.replace(NEWLINE_RE, "\n");
+      // Normalize whitespace but keep newlines intact.
+      out = out.replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n");
+      // Trim only leading/trailing spaces (not newlines so a pure keyword stays as "\n").
+      out = out.replace(/^[ \t]+|[ \t]+$/g, "");
       if (!out) return;
 
       // Dedup: if the exact phrase already sits immediately before the cursor,
       // skip it (guards against engines re-firing the same final result).
       const current = transcriptRef.current;
       const tail = current.slice(Math.max(0, current.length - out.length));
-      if (tail === out) return;
+      if (tail === out && out !== "\n") return;
 
       // Add a single leading space if we're continuing a word (no newline / space).
       const needsSpace =
