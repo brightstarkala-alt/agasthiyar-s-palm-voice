@@ -17,6 +17,11 @@ const Index = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const cursorRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
 
+  // Forward refs so speech callbacks can read the latest transcript/cursor
+  // without recreating the hook every keystroke.
+  const transcriptRef = useRef("");
+  const insertAtCursorRef = useRef<(text: string) => void>(() => {});
+
   const {
     isListening,
     isSupported,
@@ -29,7 +34,39 @@ const Index = () => {
   } = useTamilSpeech({
     onError: (msg) =>
       toast({ title: "பிழை", description: msg, variant: "destructive" }),
+    onFinalText: (chunk) => {
+      // Replace the line-break keyword with a real newline.
+      // Collapse any whitespace produced by trimming the keyword.
+      let out = chunk.replace(/\s*அடுத்தவரி\s*/g, "\n");
+      out = out.replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").trim();
+      if (!out) return;
+
+      // Dedup: if the exact phrase already sits immediately before the cursor,
+      // skip it (guards against engines re-firing the same final result).
+      const current = transcriptRef.current;
+      const tail = current.slice(Math.max(0, current.length - out.length));
+      if (tail === out) return;
+
+      // Add a single leading space if we're continuing a word (no newline / space).
+      const needsSpace =
+        current.length > 0 &&
+        !current.endsWith("\n") &&
+        !current.endsWith(" ") &&
+        !out.startsWith("\n");
+      insertAtCursorRef.current(needsSpace ? " " + out : out);
+    },
+    onPause: () => {
+      // Single newline per silence window — only if we aren't already on a fresh line.
+      const current = transcriptRef.current;
+      if (!current || current.endsWith("\n")) return;
+      insertAtCursorRef.current("\n");
+    },
   });
+
+  // Keep the latest transcript available to the speech callbacks.
+  useEffect(() => {
+    transcriptRef.current = transcript;
+  }, [transcript]);
 
   // Show a brief processing indicator after stopping
   useEffect(() => {
