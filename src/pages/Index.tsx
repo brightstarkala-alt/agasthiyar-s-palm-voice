@@ -331,9 +331,14 @@ const Index = () => {
               }}
             />
             {interim && (
-              <span className="pointer-events-none absolute bottom-3 right-4 rounded-full bg-accent/20 px-2 py-0.5 text-xs font-tamil text-accent">
-                live
-              </span>
+              <div className="pointer-events-none absolute bottom-3 left-4 right-4 flex items-end justify-between gap-2">
+                <span className="truncate rounded-md bg-card/85 px-2 py-1 font-tamil text-sm text-muted-foreground italic shadow-sm">
+                  {interim}
+                </span>
+                <span className="rounded-full bg-accent/20 px-2 py-0.5 text-xs font-tamil text-accent">
+                  live
+                </span>
+              </div>
             )}
           </div>
 
