@@ -8,46 +8,46 @@
 
 @layer base {
   :root {
-    /* Palm leaf parchment palette */
-    --background: 38 45% 88%;
-    --foreground: 25 45% 15%;
+    /* Light palm-leaf parchment palette */
+    --background: 42 55% 94%;
+    --foreground: 25 50% 15%;
 
-    --card: 40 50% 92%;
-    --card-foreground: 25 45% 18%;
+    --card: 44 60% 97%;
+    --card-foreground: 25 50% 15%;
 
-    --popover: 40 55% 94%;
-    --popover-foreground: 25 45% 15%;
+    --popover: 44 65% 98%;
+    --popover-foreground: 25 50% 15%;
 
     /* Deep walnut brown — primary ink */
-    --primary: 25 55% 22%;
-    --primary-foreground: 40 60% 95%;
+    --primary: 25 55% 25%;
+    --primary-foreground: 44 65% 97%;
 
     /* Aged sage green */
-    --secondary: 95 18% 55%;
-    --secondary-foreground: 25 45% 15%;
+    --secondary: 95 25% 65%;
+    --secondary-foreground: 25 50% 15%;
 
-    --muted: 38 30% 78%;
-    --muted-foreground: 25 25% 35%;
+    --muted: 40 35% 86%;
+    --muted-foreground: 25 25% 32%;
 
     /* Burnished gold accent */
-    --accent: 35 65% 45%;
-    --accent-foreground: 40 60% 95%;
+    --accent: 35 70% 42%;
+    --accent-foreground: 44 65% 97%;
 
     --destructive: 5 65% 45%;
-    --destructive-foreground: 40 60% 95%;
+    --destructive-foreground: 44 65% 97%;
 
-    --border: 30 35% 60%;
-    --input: 38 35% 75%;
-    --ring: 35 65% 45%;
+    --border: 35 35% 70%;
+    --input: 40 40% 82%;
+    --ring: 35 70% 42%;
 
     --radius: 0.75rem;
 
-    /* Custom palm tokens */
-    --palm-dark: 25 55% 18%;
-    --palm-mid: 30 45% 38%;
-    --palm-light: 40 50% 85%;
-    --palm-leaf: 95 25% 45%;
-    --palm-gold: 38 75% 50%;
+    /* Custom palm tokens — lighter */
+    --palm-dark: 25 55% 22%;
+    --palm-mid: 30 45% 40%;
+    --palm-light: 44 65% 94%;
+    --palm-leaf: 95 30% 50%;
+    --palm-gold: 38 75% 48%;
     --ink: 22 60% 15%;
 
     /* Gradients */
