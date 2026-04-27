@@ -50,17 +50,17 @@
     --palm-gold: 38 75% 48%;
     --ink: 22 60% 15%;
 
-    /* Gradients */
-    --gradient-parchment: linear-gradient(135deg, hsl(40 50% 90%) 0%, hsl(35 45% 82%) 100%);
-    --gradient-leaf: linear-gradient(180deg, hsl(95 25% 50%) 0%, hsl(95 30% 35%) 100%);
-    --gradient-gold: linear-gradient(135deg, hsl(38 75% 55%) 0%, hsl(28 65% 35%) 100%);
-    --gradient-header: linear-gradient(180deg, hsl(30 50% 30%) 0%, hsl(25 55% 22%) 100%);
+    /* Gradients — lighter parchment */
+    --gradient-parchment: linear-gradient(135deg, hsl(44 65% 96%) 0%, hsl(40 55% 90%) 100%);
+    --gradient-leaf: linear-gradient(180deg, hsl(95 30% 55%) 0%, hsl(95 35% 40%) 100%);
+    --gradient-gold: linear-gradient(135deg, hsl(38 80% 55%) 0%, hsl(28 70% 38%) 100%);
+    --gradient-header: linear-gradient(180deg, hsl(40 55% 90%) 0%, hsl(38 50% 82%) 100%);
 
-    /* Shadows */
-    --shadow-leaf: 0 10px 30px -8px hsl(25 55% 22% / 0.35), 0 2px 6px hsl(25 55% 22% / 0.15);
-    --shadow-deep: 0 20px 50px -12px hsl(25 55% 18% / 0.45);
-    --shadow-glow: 0 0 40px hsl(38 75% 55% / 0.4);
-    --shadow-inset: inset 0 2px 8px hsl(25 55% 22% / 0.15);
+    /* Shadows — softer */
+    --shadow-leaf: 0 8px 24px -10px hsl(25 55% 22% / 0.18), 0 1px 4px hsl(25 55% 22% / 0.08);
+    --shadow-deep: 0 16px 40px -14px hsl(25 55% 18% / 0.25);
+    --shadow-glow: 0 0 36px hsl(38 75% 55% / 0.4);
+    --shadow-inset: inset 0 1px 4px hsl(25 55% 22% / 0.08);
 
     --transition-smooth: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   }
