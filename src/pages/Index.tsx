@@ -317,7 +317,7 @@ const Index = () => {
           <div className="relative">
             <Textarea
               ref={textareaRef}
-              value={transcript + (interim ? (transcript && !transcript.endsWith("\n") ? " " : "") + interim : "")}
+              value={transcript}
               onChange={(e) => setTranscript(e.target.value)}
               onSelect={captureCursor}
               onKeyUp={captureCursor}
