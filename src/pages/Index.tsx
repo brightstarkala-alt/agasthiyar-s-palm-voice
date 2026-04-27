@@ -119,15 +119,43 @@ const Index = () => {
     };
   };
 
-  // Insert text at the current cursor position; restore cursor + focus
+  // Insert text at the current cursor position; restore cursor + focus.
+  // Also enforces the "blank line after every 4 non-empty lines" rule
+  // by inspecting the surrounding text — never double-inserts.
   const insertAtCursor = (text: string) => {
     const ta = textareaRef.current;
+    const current = transcriptRef.current;
     const { start, end } = cursorRef.current;
-    const safeStart = Math.min(start, transcript.length);
-    const safeEnd = Math.min(end, transcript.length);
-    const next = transcript.slice(0, safeStart) + text + transcript.slice(safeEnd);
+    const safeStart = Math.min(start, current.length);
+    const safeEnd = Math.min(end, current.length);
+
+    let before = current.slice(0, safeStart);
+    const after = current.slice(safeEnd);
+    let insertion = text;
+
+    // 4-line rule: only when we just completed a line (insertion ends with \n,
+    // or we're inserting a newline). Count non-empty lines in `before + insertion`.
+    if (insertion.endsWith("\n")) {
+      const combined = before + insertion;
+      const lines = combined.split("\n");
+      // Last element is "" because of trailing \n; count non-empty lines before it.
+      const nonEmpty = lines.slice(0, -1).filter((l) => l.trim().length > 0).length;
+      const alreadyBlank = combined.endsWith("\n\n");
+      const nextStartsBlank = after.startsWith("\n");
+      if (
+        nonEmpty > 0 &&
+        nonEmpty % 4 === 0 &&
+        !alreadyBlank &&
+        !nextStartsBlank
+      ) {
+        insertion += "\n";
+      }
+    }
+
+    const next = before + insertion + after;
     setTranscript(next);
-    const newPos = safeStart + text.length;
+    transcriptRef.current = next;
+    const newPos = safeStart + insertion.length;
     cursorRef.current = { start: newPos, end: newPos };
     requestAnimationFrame(() => {
       if (ta) {
@@ -136,6 +164,11 @@ const Index = () => {
       }
     });
   };
+
+  // Expose the latest insertAtCursor to the speech hook callbacks.
+  useEffect(() => {
+    insertAtCursorRef.current = insertAtCursor;
+  });
 
   const handleBackspace = () => {
     const { start, end } = cursorRef.current;
