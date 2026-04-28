@@ -124,6 +124,65 @@ const Index = () => {
     };
   };
 
+  const trimDuplicatePrefix = (text: string, beforeCursor: string) => {
+    if (text === "\n") return text;
+    const normalizedText = text.trimStart();
+    const recentWords = beforeCursor.trim().split(/\s+/).filter(Boolean).slice(-8);
+    if (!recentWords.length) return text;
+
+    let bestOverlap = 0;
+    for (let count = 1; count <= recentWords.length; count++) {
+      const phrase = recentWords.slice(-count).join(" ");
+      if (normalizedText === phrase || normalizedText.startsWith(`${phrase} `)) {
+        bestOverlap = phrase.length;
+      }
+    }
+
+    if (bestOverlap === 0) return text;
+    return normalizedText.slice(bestOverlap).trimStart();
+  };
+
+  const applyFourLineRule = (value: string, cursor: number) => {
+    const lines = value.split("\n");
+    const rebuilt: string[] = [];
+    let nonEmptyCount = 0;
+    let deltaBeforeCursor = 0;
+    let originalPos = 0;
+
+    lines.forEach((line, index) => {
+      const isLast = index === lines.length - 1;
+      const hasText = line.trim().length > 0;
+      rebuilt.push(line);
+      originalPos += line.length;
+
+      if (hasText) nonEmptyCount += 1;
+
+      if (!isLast) {
+        rebuilt.push("\n");
+        originalPos += 1;
+      }
+
+      if (hasText && nonEmptyCount % 4 === 0 && !isLast) {
+        let skipped = 0;
+        while (index + 1 + skipped < lines.length && lines[index + 1 + skipped].trim() === "") {
+          skipped += 1;
+        }
+        if (skipped === 0) {
+          rebuilt.push("\n");
+          if (originalPos <= cursor) deltaBeforeCursor += 1;
+        } else if (skipped > 1) {
+          const removed = skipped - 1;
+          if (originalPos <= cursor) deltaBeforeCursor -= removed;
+        }
+      }
+    });
+
+    return {
+      value: rebuilt.join(""),
+      cursor: Math.max(0, cursor + deltaBeforeCursor),
+    };
+  };
+
   // Insert text at the current cursor position; restore cursor + focus.
   // Also enforces the "blank line after every 4 non-empty lines" rule
   // by inspecting the surrounding text — never double-inserts.
@@ -134,33 +193,17 @@ const Index = () => {
     const safeStart = Math.min(start, current.length);
     const safeEnd = Math.min(end, current.length);
 
-    let before = current.slice(0, safeStart);
+    const before = current.slice(0, safeStart);
     const after = current.slice(safeEnd);
-    let insertion = text;
+    const insertion = trimDuplicatePrefix(text, before);
+    if (!insertion) return;
 
-    // 4-line rule: only when we just completed a line (insertion ends with \n,
-    // or we're inserting a newline). Count non-empty lines in `before + insertion`.
-    if (insertion.endsWith("\n")) {
-      const combined = before + insertion;
-      const lines = combined.split("\n");
-      // Last element is "" because of trailing \n; count non-empty lines before it.
-      const nonEmpty = lines.slice(0, -1).filter((l) => l.trim().length > 0).length;
-      const alreadyBlank = combined.endsWith("\n\n");
-      const nextStartsBlank = after.startsWith("\n");
-      if (
-        nonEmpty > 0 &&
-        nonEmpty % 4 === 0 &&
-        !alreadyBlank &&
-        !nextStartsBlank
-      ) {
-        insertion += "\n";
-      }
-    }
-
-    const next = before + insertion + after;
-    setTranscript(next);
-    transcriptRef.current = next;
-    const newPos = safeStart + insertion.length;
+    const inserted = before + insertion + after;
+    const rawPos = safeStart + insertion.length;
+    const formatted = applyFourLineRule(inserted, rawPos);
+    setTranscript(formatted.value);
+    transcriptRef.current = formatted.value;
+    const newPos = formatted.cursor;
     cursorRef.current = { start: newPos, end: newPos };
     requestAnimationFrame(() => {
       if (ta) {
