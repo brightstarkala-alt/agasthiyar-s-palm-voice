@@ -167,15 +167,17 @@ const Index = () => {
         while (index + 1 + skipped < lines.length && lines[index + 1 + skipped].trim() === "") {
           skipped += 1;
         }
-        if (skipped === 0) {
-          rebuilt.push("\n");
-          if (originalPos <= cursor) newCursor += 1;
-        } else if (skipped > 1) {
-          for (let s = 1; s < skipped; s++) {
-            originalPos += lines[index + s].length + 1;
-            if (originalPos <= cursor) newCursor -= lines[index + s].length + 1;
+        rebuilt.push("\n");
+        if (originalPos <= cursor) newCursor += 1;
+
+        if (skipped > 0) {
+          for (let s = 1; s <= skipped; s++) {
+            const skippedIndex = index + s;
+            const skippedLength = lines[skippedIndex].length + (skippedIndex < lines.length - 1 ? 1 : 0);
+            originalPos += skippedLength;
+            if (originalPos <= cursor) newCursor -= skippedLength;
           }
-          index += skipped - 1;
+          index += skipped;
         }
       }
     }
