@@ -150,6 +150,7 @@ const Index = () => {
     let newCursor = cursor;
 
     for (let index = 0; index < lines.length; index++) {
+      const line = lines[index];
       const hasText = line.trim().length > 0;
       rebuilt.push(line);
       originalPos += line.length;
