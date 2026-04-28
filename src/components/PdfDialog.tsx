@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
-import agasthiyar from "@/assets/agasthiyar.png";
+import agasthiyar from "@/assets/agasthiyar.jpg";
 
 interface PdfDialogProps {
   open: boolean;
