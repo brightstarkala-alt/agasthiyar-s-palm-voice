@@ -88,6 +88,8 @@ export function useTamilSpeech({
       );
       return;
     }
+    // Guard: never start a second instance while one is already active.
+    if (isListening) return;
     try {
       setInterim("");
       processedUpToRef.current = -1;
