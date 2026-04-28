@@ -146,40 +146,42 @@ const Index = () => {
     const lines = value.split("\n");
     const rebuilt: string[] = [];
     let nonEmptyCount = 0;
-    let deltaBeforeCursor = 0;
     let originalPos = 0;
+    let newCursor = cursor;
 
-    lines.forEach((line, index) => {
-      const isLast = index === lines.length - 1;
+    for (let index = 0; index < lines.length; index++) {
       const hasText = line.trim().length > 0;
       rebuilt.push(line);
       originalPos += line.length;
 
       if (hasText) nonEmptyCount += 1;
 
-      if (!isLast) {
+      if (index < lines.length - 1) {
         rebuilt.push("\n");
         originalPos += 1;
       }
 
-      if (hasText && nonEmptyCount % 4 === 0 && !isLast) {
+      if (hasText && nonEmptyCount % 4 === 0 && index < lines.length - 1) {
         let skipped = 0;
         while (index + 1 + skipped < lines.length && lines[index + 1 + skipped].trim() === "") {
           skipped += 1;
         }
         if (skipped === 0) {
           rebuilt.push("\n");
-          if (originalPos <= cursor) deltaBeforeCursor += 1;
+          if (originalPos <= cursor) newCursor += 1;
         } else if (skipped > 1) {
-          const removed = skipped - 1;
-          if (originalPos <= cursor) deltaBeforeCursor -= removed;
+          for (let s = 1; s < skipped; s++) {
+            originalPos += lines[index + s].length + 1;
+            if (originalPos <= cursor) newCursor -= lines[index + s].length + 1;
+          }
+          index += skipped - 1;
         }
       }
-    });
+    }
 
     return {
       value: rebuilt.join(""),
-      cursor: Math.max(0, cursor + deltaBeforeCursor),
+      cursor: Math.max(0, newCursor),
     };
   };
 
