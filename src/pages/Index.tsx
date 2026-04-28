@@ -212,72 +212,34 @@ const Index = () => {
   };
 
   return (
-    <div className="relative min-h-screen pb-24">
+    <div className="relative flex h-[100dvh] flex-col overflow-hidden">
       <Header />
 
-      <main className="container mt-6 max-w-4xl space-y-6 sm:mt-8 sm:space-y-8">
-        {/* Mic + status card */}
-        <section className="palm-card float-in overflow-hidden p-5 sm:p-10">
-          <div className="flex flex-col items-center gap-5 sm:gap-6">
-            <div className="text-center">
-              <h2 className="font-tamil text-2xl font-bold text-palm-dark sm:text-3xl">
-                {isListening ? "கேட்கிறேன்..." : "உங்கள் குரலைப் பதிவு செய்யுங்கள்"}
-              </h2>
-              <p className="mt-2 font-tamil text-sm text-muted-foreground sm:text-base">
-                {isListening
-                  ? 'தமிழில் பேசுங்கள் • புதிய வரிக்கு "அடுத்தவரி" எனச் சொல்லுங்கள்'
-                  : "மைக்கை அழுத்தி தமிழில் பேசத் தொடங்குங்கள்"}
-              </p>
-            </div>
+      {!isSupported && (
+        <div className="mx-3 mt-2 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive sm:mx-6">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span className="font-tamil">
+            குரல் உள்ளீடு ஆதரிக்கப்படவில்லை. தயவுசெய்து தமிழ் விசைப்பலகையைப் பயன்படுத்தவும்.
+          </span>
+        </div>
+      )}
 
-            {!isSupported && (
-              <div className="flex flex-col items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4 shrink-0" />
-                  <span className="font-tamil">
-                    குரல் உள்ளீடு ஆதரிக்கப்படவில்லை. தயவுசெய்து தமிழ் விசைப்பலகையைப் பயன்படுத்தவும்.
-                  </span>
-                </div>
-                <span className="text-xs opacity-80">
-                  Voice input not supported. Please use Tamil keyboard.
-                </span>
-              </div>
-            )}
-
-            <MicButton
-              isListening={isListening}
-              onClick={handleMic}
-              disabled={!isSupported}
-            />
-
-            <Waveform active={isListening} />
-
-            {showProcessing && (
-              <p className="font-tamil text-sm text-accent animate-pulse">
-                செயலாக்குகிறது...
-              </p>
-            )}
-          </div>
-
-          {/* Decorative ornament corners */}
-          <div className="pointer-events-none absolute left-3 top-3 h-6 w-6 border-l-2 border-t-2 border-palm-gold/60" />
-          <div className="pointer-events-none absolute right-3 top-3 h-6 w-6 border-r-2 border-t-2 border-palm-gold/60" />
-          <div className="pointer-events-none absolute bottom-3 left-3 h-6 w-6 border-b-2 border-l-2 border-palm-gold/60" />
-          <div className="pointer-events-none absolute bottom-3 right-3 h-6 w-6 border-b-2 border-r-2 border-palm-gold/60" />
-        </section>
-
-        {/* Transcript editor */}
-        <section className="palm-card float-in p-4 sm:p-8">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="font-tamil text-xl font-bold text-palm-dark sm:text-2xl">
-                ஓலைச்சுவடி
-              </h3>
-              <p className="font-tamil text-xs text-muted-foreground sm:text-sm">
-                உரையைத் திருத்தலாம் • Editable Tamil text
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
+      {/* Middle: editable transcript — flexes to fill, scrolls if long */}
+      <main className="flex min-h-0 flex-1 flex-col px-3 pb-3 pt-3 sm:px-6">
+        <div className="palm-card float-in flex min-h-0 flex-1 flex-col p-3 sm:p-5">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-tamil text-lg font-bold text-palm-dark sm:text-xl">
+              ஓலைச்சுவடி
+            </h3>
+            <div className="flex flex-wrap gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={openKeyboard}
+                className="border-accent/50 bg-accent/10 font-tamil text-accent hover:bg-accent/20"
+              >
+                <Keyboard className="mr-1 h-4 w-4" /> விசைப்பலகை
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -287,7 +249,7 @@ const Index = () => {
                 }}
                 className="border-palm-gold/40 font-tamil text-palm-dark hover:bg-palm-gold/15"
               >
-                <RotateCcw className="mr-1.5 h-4 w-4" /> அழி
+                <RotateCcw className="mr-1 h-4 w-4" /> அழி
               </Button>
               <Button
                 variant="outline"
@@ -295,31 +257,19 @@ const Index = () => {
                 onClick={handleCopy}
                 className="border-palm-gold/40 font-tamil text-palm-dark hover:bg-palm-gold/15"
               >
-                <Copy className="mr-1.5 h-4 w-4" /> நகலெடு
+                <Copy className="mr-1 h-4 w-4" /> நகலெடு
               </Button>
               <Button
                 size="sm"
                 onClick={() => setPdfOpen(true)}
                 className="bg-gradient-gold font-tamil text-primary-foreground hover:opacity-90"
               >
-                <Download className="mr-1.5 h-4 w-4" /> PDF
+                <Download className="mr-1 h-4 w-4" /> PDF
               </Button>
             </div>
           </div>
 
-          {/* Tamil keyboard trigger */}
-          <div className="mb-3 flex justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={openKeyboard}
-              className="border-accent/50 bg-accent/10 font-tamil text-accent hover:bg-accent/20"
-            >
-              <Keyboard className="mr-1.5 h-4 w-4" /> தமிழ் விசைப்பலகை
-            </Button>
-          </div>
-
-          <div className="relative">
+          <div className="relative min-h-0 flex-1">
             <Textarea
               ref={textareaRef}
               value={transcript}
@@ -329,53 +279,50 @@ const Index = () => {
               onClick={captureCursor}
               onBlur={captureCursor}
               placeholder="உங்கள் உரை இங்கே தோன்றும்..."
-              className="min-h-[280px] resize-y scroll-smooth border-palm-gold/40 bg-card/70 font-tamil text-lg leading-relaxed text-ink shadow-inner placeholder:text-muted-foreground/60 focus-visible:ring-palm-gold/50 sm:text-xl sm:leading-loose"
+              className="h-full w-full resize-none scroll-smooth border-palm-gold/40 bg-card/70 font-tamil text-base leading-relaxed text-ink shadow-inner placeholder:text-muted-foreground/60 focus-visible:ring-palm-gold/50 sm:text-lg sm:leading-loose"
               style={{
                 backgroundImage:
-                  "repeating-linear-gradient(transparent, transparent 38px, hsl(var(--palm-gold) / 0.22) 38px, hsl(var(--palm-gold) / 0.22) 39px)",
+                  "repeating-linear-gradient(transparent, transparent 34px, hsl(var(--palm-gold) / 0.22) 34px, hsl(var(--palm-gold) / 0.22) 35px)",
               }}
             />
             {interim && (
-              <div className="pointer-events-none absolute bottom-3 left-4 right-4 flex items-end justify-between gap-2">
-                <span className="truncate rounded-md bg-card/85 px-2 py-1 font-tamil text-sm text-muted-foreground italic shadow-sm">
+              <div className="pointer-events-none absolute bottom-2 left-2 right-2 flex items-end justify-between gap-2">
+                <span className="truncate rounded-md bg-card/85 px-2 py-1 font-tamil text-xs text-muted-foreground italic shadow-sm">
                   {interim}
                 </span>
-                <span className="rounded-full bg-accent/20 px-2 py-0.5 text-xs font-tamil text-accent">
+                <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-tamil text-accent">
                   live
                 </span>
               </div>
             )}
           </div>
-
-          <p className="mt-3 font-tamil text-xs text-muted-foreground">
-            💡 குறிப்பு: "அடுத்தவரி" எனச் சொன்னால் புதிய வரி • 2 விநாடி இடைவெளியில்
-            தானாக புதிய வரி • 4 வரிகளுக்குப் பின் தானாக வெற்று வரி
-          </p>
-        </section>
+        </div>
       </main>
 
-      {/* Sticky mobile mic — quick access while scrolling the transcript */}
-      <button
-        onClick={handleMic}
-        disabled={!isSupported}
-        aria-label={isListening ? "பதிவை நிறுத்து" : "மீண்டும் தொடங்கு"}
-        className={`fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full text-primary-foreground shadow-[var(--shadow-deep)] transition-transform active:scale-95 disabled:opacity-50 sm:hidden ${
-          isListening ? "mic-recording" : "mic-button"
-        }`}
-      >
-        {isListening ? (
-          <span className="h-4 w-4 rounded-sm bg-current" />
-        ) : (
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            className="h-6 w-6"
-          >
-            <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z" />
-          </svg>
-        )}
-      </button>
+      {/* Bottom: mic + status — always visible, on the same screen */}
+      <footer className="shrink-0 border-t border-palm-gold/30 bg-gradient-header/80 px-3 py-3 backdrop-blur sm:px-6 sm:py-4">
+        <div className="mx-auto flex max-w-4xl flex-col items-center gap-2">
+          <p className="font-tamil text-xs text-palm-dark sm:text-sm">
+            {isListening
+              ? 'கேட்கிறேன்... • "அடுத்தவரி" = புதிய வரி'
+              : "மைக்கை அழுத்தி தமிழில் பேசுங்கள்"}
+          </p>
+          <div className="flex items-center gap-4">
+            <Waveform active={isListening} />
+            <MicButton
+              isListening={isListening}
+              onClick={handleMic}
+              disabled={!isSupported}
+            />
+            <Waveform active={isListening} />
+          </div>
+          {showProcessing && (
+            <p className="font-tamil text-xs text-accent animate-pulse">
+              செயலாக்குகிறது...
+            </p>
+          )}
+        </div>
+      </footer>
 
       <PdfDialog open={pdfOpen} onOpenChange={setPdfOpen} transcript={transcript} />
 
