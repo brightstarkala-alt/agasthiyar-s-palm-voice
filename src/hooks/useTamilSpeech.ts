@@ -31,10 +31,13 @@ export function useTamilSpeech({
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const pauseTimerRef = useRef<number | null>(null);
+  const restartTimerRef = useRef<number | null>(null);
   const pauseFiredRef = useRef<boolean>(true);
-  // Track the highest result index we've already committed to avoid duplicates
-  // if the recognizer re-delivers the same final result.
-  const processedUpToRef = useRef<number>(-1);
+  const listeningRef = useRef<boolean>(false);
+  const startingRef = useRef<boolean>(false);
+  const manualStopRef = useRef<boolean>(true);
+  const processedResultsRef = useRef<Set<string>>(new Set());
+  const lastFinalRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
 
   // Stable refs to latest callbacks so we don't rebuild handlers each render.
   const onFinalRef = useRef(onFinalText);
@@ -69,6 +72,13 @@ export function useTamilSpeech({
     }
   };
 
+  const clearRestartTimer = () => {
+    if (restartTimerRef.current) {
+      window.clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+    }
+  };
+
   const schedulePause = useCallback(() => {
     clearPauseTimer();
     pauseFiredRef.current = false;
@@ -88,24 +98,48 @@ export function useTamilSpeech({
       );
       return;
     }
-    // Guard: never start a second instance while one is already active.
-    if (isListening) return;
+    // Guard: never start a second instance while one is already active/starting.
+    if (listeningRef.current || startingRef.current) return;
     try {
+      clearRestartTimer();
       setInterim("");
-      processedUpToRef.current = -1;
+      processedResultsRef.current.clear();
+      manualStopRef.current = false;
+      startingRef.current = true;
 
-      rec.onstart = () => setIsListening(true);
+      rec.onstart = () => {
+        startingRef.current = false;
+        listeningRef.current = true;
+        setIsListening(true);
+      };
       rec.onend = () => {
+        startingRef.current = false;
+        listeningRef.current = false;
         setIsListening(false);
         setInterim("");
+        processedResultsRef.current.clear();
         // Do NOT clear the pause timer here — a natural end IS a pause and
         // should still let the silence callback fire once.
+        if (!manualStopRef.current) {
+          clearRestartTimer();
+          restartTimerRef.current = window.setTimeout(() => {
+            if (manualStopRef.current || listeningRef.current || startingRef.current) return;
+            try {
+              startingRef.current = true;
+              rec.start();
+            } catch {
+              startingRef.current = false;
+            }
+          }, 350);
+        }
       };
       rec.onerror = (e: SpeechRecognitionErrorEvent) => {
         if (e.error === "no-speech") return;
         if (e.error === "not-allowed") {
+          manualStopRef.current = true;
           onErrorRef.current?.("மைக்ரோஃபோன் அனுமதி மறுக்கப்பட்டது.");
         } else if (e.error === "audio-capture") {
+          manualStopRef.current = true;
           onErrorRef.current?.("மைக்ரோஃபோன் கிடைக்கவில்லை.");
         } else {
           onErrorRef.current?.(`பிழை: ${e.error}`);
@@ -117,11 +151,18 @@ export function useTamilSpeech({
           const result = event.results[i];
           const text = result[0].transcript;
           if (result.isFinal) {
-            // Guard against the same final index being emitted twice.
-            if (i > processedUpToRef.current) {
-              processedUpToRef.current = i;
-              const cleaned = text.replace(/\s+/g, " ").trim();
-              if (cleaned) onFinalRef.current?.(cleaned);
+            const cleaned = text.replace(/\s+/g, " ").trim();
+            if (!cleaned) continue;
+
+            const now = Date.now();
+            const key = `${i}:${cleaned}`;
+            const repeatedResult = processedResultsRef.current.has(key);
+            const rapidDuplicate =
+              lastFinalRef.current.text === cleaned && now - lastFinalRef.current.time < 1500;
+            if (!repeatedResult && !rapidDuplicate) {
+              processedResultsRef.current.add(key);
+              lastFinalRef.current = { text: cleaned, time: now };
+              onFinalRef.current?.(cleaned);
             }
           } else {
             interimText += text;
@@ -133,25 +174,37 @@ export function useTamilSpeech({
       };
       rec.start();
     } catch (err) {
+      startingRef.current = false;
+      listeningRef.current = false;
+      manualStopRef.current = true;
       console.error(err);
       onErrorRef.current?.("குரல் அறிதலைத் தொடங்க முடியவில்லை.");
     }
   }, [schedulePause]);
 
   const stop = useCallback(() => {
-    recognitionRef.current?.stop();
+    manualStopRef.current = true;
+    clearRestartTimer();
+    try {
+      recognitionRef.current?.stop();
+    } catch {
+      recognitionRef.current?.abort();
+    }
     clearPauseTimer();
   }, []);
 
   const reset = useCallback(() => {
     setTranscript("");
     setInterim("");
-    processedUpToRef.current = -1;
+    processedResultsRef.current.clear();
+    lastFinalRef.current = { text: "", time: 0 };
   }, []);
 
   useEffect(
     () => () => {
       clearPauseTimer();
+      clearRestartTimer();
+      manualStopRef.current = true;
       recognitionRef.current?.abort();
     },
     []
