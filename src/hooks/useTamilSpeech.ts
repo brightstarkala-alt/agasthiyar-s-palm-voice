@@ -36,7 +36,7 @@ export function useTamilSpeech({
   const listeningRef = useRef<boolean>(false);
   const startingRef = useRef<boolean>(false);
   const manualStopRef = useRef<boolean>(true);
-  const processedResultsRef = useRef<Set<string>>(new Set());
+  const processedResultsRef = useRef<Map<string, number>>(new Map());
   const lastFinalRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
 
   // Stable refs to latest callbacks so we don't rebuild handlers each render.
@@ -117,7 +117,6 @@ export function useTamilSpeech({
         listeningRef.current = false;
         setIsListening(false);
         setInterim("");
-        processedResultsRef.current.clear();
         // Do NOT clear the pause timer here — a natural end IS a pause and
         // should still let the silence callback fire once.
         if (!manualStopRef.current) {
@@ -156,11 +155,14 @@ export function useTamilSpeech({
 
             const now = Date.now();
             const key = `${i}:${cleaned}`;
+            processedResultsRef.current.forEach((time, storedKey) => {
+              if (now - time > 5000) processedResultsRef.current.delete(storedKey);
+            });
             const repeatedResult = processedResultsRef.current.has(key);
             const rapidDuplicate =
               lastFinalRef.current.text === cleaned && now - lastFinalRef.current.time < 1500;
             if (!repeatedResult && !rapidDuplicate) {
-              processedResultsRef.current.add(key);
+              processedResultsRef.current.set(key, now);
               lastFinalRef.current = { text: cleaned, time: now };
               onFinalRef.current?.(cleaned);
             }
