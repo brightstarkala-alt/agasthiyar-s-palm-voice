@@ -169,6 +169,7 @@ const Index = () => {
     const output: string[] = [];
     let mappedCursor: number | null = null;
     let writtenWords = 0;
+    let outputLength = 0;
 
     words.forEach((word, index) => {
       const lineWordIndex = index % 3;
@@ -177,18 +178,24 @@ const Index = () => {
       if (index > 0) {
         if (lineWordIndex === 0) {
           output.push("\n");
-          if (lineIndex > 0 && lineIndex % 4 === 0) output.push("\n");
+          outputLength += 1;
+          if (lineIndex > 0 && lineIndex % 4 === 0) {
+            output.push("\n");
+            outputLength += 1;
+          }
         } else {
           output.push(" ");
+          outputLength += 1;
         }
       }
 
-      const wordStart = output.join("").length;
+      const wordStart = outputLength;
       if (cursorWordIndex === index) mappedCursor = wordStart + cursorOffset;
       output.push(word);
+      outputLength += word.length;
       writtenWords += 1;
       if (cursorWordIndex === null && completeWordsBeforeCursor === writtenWords) {
-        mappedCursor = output.join("").length;
+        mappedCursor = outputLength;
       }
     });
 
@@ -226,6 +233,18 @@ const Index = () => {
         ta.focus({ preventScroll: true });
         ta.setSelectionRange(newPos, newPos);
       }
+    });
+  };
+
+  const handleTextChange = (value: string) => {
+    const ta = textareaRef.current;
+    const cursor = ta?.selectionStart ?? value.length;
+    const formatted = formatStructuredText(value, cursor);
+    setTranscript(formatted.value);
+    transcriptRef.current = formatted.value;
+    cursorRef.current = { start: formatted.cursor, end: formatted.cursor };
+    requestAnimationFrame(() => {
+      if (ta) ta.setSelectionRange(formatted.cursor, formatted.cursor);
     });
   };
 
@@ -332,7 +351,7 @@ const Index = () => {
             <Textarea
               ref={textareaRef}
               value={transcript}
-              onChange={(e) => setTranscript(e.target.value)}
+              onChange={(e) => handleTextChange(e.target.value)}
               onSelect={captureCursor}
               onKeyUp={captureCursor}
               onClick={captureCursor}
