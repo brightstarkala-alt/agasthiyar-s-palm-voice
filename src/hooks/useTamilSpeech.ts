@@ -31,7 +31,7 @@ export function useTamilSpeech({
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const pauseTimerRef = useRef<number | null>(null);
-  const restartTimerRef = useRef<number | null>(null);
+  const silenceStopTimerRef = useRef<number | null>(null);
   const pauseFiredRef = useRef<boolean>(true);
   const listeningRef = useRef<boolean>(false);
   const startingRef = useRef<boolean>(false);
