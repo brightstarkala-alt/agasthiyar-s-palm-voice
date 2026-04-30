@@ -59,11 +59,13 @@ export function useTamilSpeech({
     }
     const rec = new SR();
     rec.continuous = true;
-    rec.interimResults = true;
+    rec.interimResults = false;
     rec.lang = "ta-IN";
     rec.maxAlternatives = 1;
     recognitionRef.current = rec;
   }, []);
+
+  const silenceStopTimerRef = { current: null as number | null };
 
   const clearPauseTimer = () => {
     if (pauseTimerRef.current) {
