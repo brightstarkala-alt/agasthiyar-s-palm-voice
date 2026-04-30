@@ -74,12 +74,29 @@ export function useTamilSpeech({
     }
   };
 
-  const clearRestartTimer = () => {
-    if (restartTimerRef.current) {
-      window.clearTimeout(restartTimerRef.current);
-      restartTimerRef.current = null;
+  const clearSilenceStopTimer = () => {
+    if (silenceStopTimerRef.current) {
+      window.clearTimeout(silenceStopTimerRef.current);
+      silenceStopTimerRef.current = null;
     }
   };
+
+  const stopInternal = () => {
+    manualStopRef.current = true;
+    try {
+      recognitionRef.current?.stop();
+    } catch {
+      try { recognitionRef.current?.abort(); } catch { /* noop */ }
+    }
+  };
+
+  const scheduleSilenceStop = useCallback(() => {
+    clearSilenceStopTimer();
+    silenceStopTimerRef.current = window.setTimeout(() => {
+      // 5s of silence — stop recording, do NOT auto-restart.
+      stopInternal();
+    }, 5000);
+  }, []);
 
   const schedulePause = useCallback(() => {
     clearPauseTimer();
