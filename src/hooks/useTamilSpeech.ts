@@ -65,8 +65,6 @@ export function useTamilSpeech({
     recognitionRef.current = rec;
   }, []);
 
-  const silenceStopTimerRef = { current: null as number | null };
-
   const clearPauseTimer = () => {
     if (pauseTimerRef.current) {
       window.clearTimeout(pauseTimerRef.current);
