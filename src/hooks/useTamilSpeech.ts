@@ -191,7 +191,7 @@ export function useTamilSpeech({
       console.error(err);
       onErrorRef.current?.("குரல் அறிதலைத் தொடங்க முடியவில்லை.");
     }
-  }, [schedulePause]);
+  }, [schedulePause, scheduleSilenceStop]);
 
   const stop = useCallback(() => {
     manualStopRef.current = true;
