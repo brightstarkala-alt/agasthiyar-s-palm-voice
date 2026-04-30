@@ -179,8 +179,9 @@ export function useTamilSpeech({
           }
         }
         setInterim(interimText);
-        // Any activity (interim or final) restarts the pause window.
+        // Any activity restarts the pause + silence-stop windows.
         schedulePause();
+        scheduleSilenceStop();
       };
       rec.start();
     } catch (err) {
