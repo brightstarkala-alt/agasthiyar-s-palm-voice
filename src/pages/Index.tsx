@@ -130,61 +130,72 @@ const Index = () => {
     const recentWords = beforeCursor.trim().split(/\s+/).filter(Boolean).slice(-8);
     if (!recentWords.length) return text;
 
-    let bestOverlap = 0;
+    const incomingWords = normalizedText.split(/\s+/).filter(Boolean);
+    let bestOverlapWords = 0;
     for (let count = 1; count <= recentWords.length; count++) {
-      const phrase = recentWords.slice(-count).join(" ");
-      if (normalizedText === phrase || normalizedText.startsWith(`${phrase} `)) {
-        bestOverlap = phrase.length;
+      const tail = recentWords.slice(-count).join(" ");
+      const head = incomingWords.slice(0, count).join(" ");
+      if (tail === head) {
+        bestOverlapWords = count;
       }
     }
 
-    if (bestOverlap === 0) return text;
-    return normalizedText.slice(bestOverlap).trimStart();
+    if (bestOverlapWords === 0) return text;
+    return incomingWords.slice(bestOverlapWords).join(" ");
   };
 
-  const applyFourLineRule = (value: string, cursor: number) => {
-    const lines = value.split("\n");
-    const rebuilt: string[] = [];
-    let nonEmptyCount = 0;
-    let originalPos = 0;
-    let newCursor = cursor;
+  const formatStructuredText = (value: string, cursor: number) => {
+    const matches = Array.from(value.matchAll(/\S+/g));
+    const words = matches.map((match) => match[0]);
 
-    for (let index = 0; index < lines.length; index++) {
-      const line = lines[index];
-      const hasText = line.trim().length > 0;
-      rebuilt.push(line);
-      originalPos += line.length;
+    if (!words.length) return { value: "", cursor: 0 };
 
-      if (hasText) nonEmptyCount += 1;
+    let cursorWordIndex: number | null = null;
+    let cursorOffset = 0;
+    let completeWordsBeforeCursor = 0;
 
-      if (index < lines.length - 1) {
-        rebuilt.push("\n");
-        originalPos += 1;
+    for (let index = 0; index < matches.length; index++) {
+      const start = matches[index].index ?? 0;
+      const end = start + matches[index][0].length;
+      if (cursor > start && cursor < end) {
+        cursorWordIndex = index;
+        cursorOffset = cursor - start;
+        break;
       }
-
-      if (hasText && nonEmptyCount % 4 === 0 && index < lines.length - 1) {
-        let skipped = 0;
-        while (index + 1 + skipped < lines.length && lines[index + 1 + skipped].trim() === "") {
-          skipped += 1;
-        }
-        rebuilt.push("\n");
-        if (originalPos <= cursor) newCursor += 1;
-
-        if (skipped > 0) {
-          for (let s = 1; s <= skipped; s++) {
-            const skippedIndex = index + s;
-            const skippedLength = lines[skippedIndex].length + (skippedIndex < lines.length - 1 ? 1 : 0);
-            originalPos += skippedLength;
-            if (originalPos <= cursor) newCursor -= skippedLength;
-          }
-          index += skipped;
-        }
-      }
+      if (cursor >= end) completeWordsBeforeCursor = index + 1;
+      if (cursor <= start) break;
     }
 
+    const output: string[] = [];
+    let mappedCursor: number | null = null;
+    let writtenWords = 0;
+
+    words.forEach((word, index) => {
+      const lineWordIndex = index % 3;
+      const lineIndex = Math.floor(index / 3);
+
+      if (index > 0) {
+        if (lineWordIndex === 0) {
+          output.push("\n");
+          if (lineIndex > 0 && lineIndex % 4 === 0) output.push("\n");
+        } else {
+          output.push(" ");
+        }
+      }
+
+      const wordStart = output.join("").length;
+      if (cursorWordIndex === index) mappedCursor = wordStart + cursorOffset;
+      output.push(word);
+      writtenWords += 1;
+      if (cursorWordIndex === null && completeWordsBeforeCursor === writtenWords) {
+        mappedCursor = output.join("").length;
+      }
+    });
+
+    const formatted = output.join("");
     return {
-      value: rebuilt.join(""),
-      cursor: Math.max(0, newCursor),
+      value: formatted,
+      cursor: Math.min(mappedCursor ?? formatted.length, formatted.length),
     };
   };
 
@@ -205,7 +216,7 @@ const Index = () => {
 
     const inserted = before + insertion + after;
     const rawPos = safeStart + insertion.length;
-    const formatted = applyFourLineRule(inserted, rawPos);
+    const formatted = formatStructuredText(inserted, rawPos);
     setTranscript(formatted.value);
     transcriptRef.current = formatted.value;
     const newPos = formatted.cursor;
@@ -327,10 +338,13 @@ const Index = () => {
               onClick={captureCursor}
               onBlur={captureCursor}
               placeholder="உங்கள் உரை இங்கே தோன்றும்..."
-              className="h-full w-full resize-none scroll-smooth border-palm-gold/40 bg-card/70 font-tamil text-base leading-relaxed text-ink shadow-inner placeholder:text-muted-foreground/60 focus-visible:ring-palm-gold/50 sm:text-lg sm:leading-loose"
+              className="h-full w-full resize-none overflow-y-auto whitespace-pre-wrap break-words scroll-smooth border-palm-gold/40 bg-card/70 p-4 font-tamil text-base leading-relaxed text-ink shadow-inner placeholder:text-muted-foreground/60 focus-visible:ring-palm-gold/50 sm:text-lg sm:leading-loose"
               style={{
                 backgroundImage:
                   "repeating-linear-gradient(transparent, transparent 34px, hsl(var(--palm-gold) / 0.22) 34px, hsl(var(--palm-gold) / 0.22) 35px)",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                overflowWrap: "break-word",
               }}
             />
             {interim && (
