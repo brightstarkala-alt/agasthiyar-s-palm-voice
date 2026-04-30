@@ -195,7 +195,7 @@ export function useTamilSpeech({
 
   const stop = useCallback(() => {
     manualStopRef.current = true;
-    clearRestartTimer();
+    clearSilenceStopTimer();
     try {
       recognitionRef.current?.stop();
     } catch {
