@@ -31,7 +31,7 @@ export function useTamilSpeech({
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const pauseTimerRef = useRef<number | null>(null);
-  const restartTimerRef = useRef<number | null>(null);
+  const silenceStopTimerRef = useRef<number | null>(null);
   const pauseFiredRef = useRef<boolean>(true);
   const listeningRef = useRef<boolean>(false);
   const startingRef = useRef<boolean>(false);
@@ -59,7 +59,7 @@ export function useTamilSpeech({
     }
     const rec = new SR();
     rec.continuous = true;
-    rec.interimResults = true;
+    rec.interimResults = false;
     rec.lang = "ta-IN";
     rec.maxAlternatives = 1;
     recognitionRef.current = rec;
@@ -72,12 +72,29 @@ export function useTamilSpeech({
     }
   };
 
-  const clearRestartTimer = () => {
-    if (restartTimerRef.current) {
-      window.clearTimeout(restartTimerRef.current);
-      restartTimerRef.current = null;
+  const clearSilenceStopTimer = () => {
+    if (silenceStopTimerRef.current) {
+      window.clearTimeout(silenceStopTimerRef.current);
+      silenceStopTimerRef.current = null;
     }
   };
+
+  const stopInternal = () => {
+    manualStopRef.current = true;
+    try {
+      recognitionRef.current?.stop();
+    } catch {
+      try { recognitionRef.current?.abort(); } catch { /* noop */ }
+    }
+  };
+
+  const scheduleSilenceStop = useCallback(() => {
+    clearSilenceStopTimer();
+    silenceStopTimerRef.current = window.setTimeout(() => {
+      // 5s of silence — stop recording, do NOT auto-restart.
+      stopInternal();
+    }, 5000);
+  }, []);
 
   const schedulePause = useCallback(() => {
     clearPauseTimer();
@@ -101,9 +118,11 @@ export function useTamilSpeech({
     // Guard: never start a second instance while one is already active/starting.
     if (listeningRef.current || startingRef.current) return;
     try {
-      clearRestartTimer();
+      clearPauseTimer();
+      clearSilenceStopTimer();
       setInterim("");
       processedResultsRef.current.clear();
+      lastFinalRef.current = { text: "", time: 0 };
       manualStopRef.current = false;
       startingRef.current = true;
 
@@ -111,26 +130,15 @@ export function useTamilSpeech({
         startingRef.current = false;
         listeningRef.current = true;
         setIsListening(true);
+        scheduleSilenceStop();
       };
       rec.onend = () => {
         startingRef.current = false;
         listeningRef.current = false;
         setIsListening(false);
         setInterim("");
-        // Do NOT clear the pause timer here — a natural end IS a pause and
-        // should still let the silence callback fire once.
-        if (!manualStopRef.current) {
-          clearRestartTimer();
-          restartTimerRef.current = window.setTimeout(() => {
-            if (manualStopRef.current || listeningRef.current || startingRef.current) return;
-            try {
-              startingRef.current = true;
-              rec.start();
-            } catch {
-              startingRef.current = false;
-            }
-          }, 350);
-        }
+        clearSilenceStopTimer();
+        // Do NOT auto-restart — only the user toggling the mic restarts.
       };
       rec.onerror = (e: SpeechRecognitionErrorEvent) => {
         if (e.error === "no-speech") return;
@@ -171,8 +179,9 @@ export function useTamilSpeech({
           }
         }
         setInterim(interimText);
-        // Any activity (interim or final) restarts the pause window.
+        // Any activity restarts the pause + silence-stop windows.
         schedulePause();
+        scheduleSilenceStop();
       };
       rec.start();
     } catch (err) {
@@ -182,11 +191,11 @@ export function useTamilSpeech({
       console.error(err);
       onErrorRef.current?.("குரல் அறிதலைத் தொடங்க முடியவில்லை.");
     }
-  }, [schedulePause]);
+  }, [schedulePause, scheduleSilenceStop]);
 
   const stop = useCallback(() => {
     manualStopRef.current = true;
-    clearRestartTimer();
+    clearSilenceStopTimer();
     try {
       recognitionRef.current?.stop();
     } catch {
@@ -205,7 +214,7 @@ export function useTamilSpeech({
   useEffect(
     () => () => {
       clearPauseTimer();
-      clearRestartTimer();
+      clearSilenceStopTimer();
       manualStopRef.current = true;
       recognitionRef.current?.abort();
     },

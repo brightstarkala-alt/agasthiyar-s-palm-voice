@@ -144,71 +144,8 @@ const Index = () => {
     return incomingWords.slice(bestOverlapWords).join(" ");
   };
 
-  const formatStructuredText = (value: string, cursor: number) => {
-    const matches = Array.from(value.matchAll(/\S+/g));
-    const words = matches.map((match) => match[0]);
-
-    if (!words.length) return { value: "", cursor: 0 };
-
-    let cursorWordIndex: number | null = null;
-    let cursorOffset = 0;
-    let completeWordsBeforeCursor = 0;
-
-    for (let index = 0; index < matches.length; index++) {
-      const start = matches[index].index ?? 0;
-      const end = start + matches[index][0].length;
-      if (cursor > start && cursor < end) {
-        cursorWordIndex = index;
-        cursorOffset = cursor - start;
-        break;
-      }
-      if (cursor >= end) completeWordsBeforeCursor = index + 1;
-      if (cursor <= start) break;
-    }
-
-    const output: string[] = [];
-    let mappedCursor: number | null = null;
-    let writtenWords = 0;
-    let outputLength = 0;
-
-    words.forEach((word, index) => {
-      const lineWordIndex = index % 3;
-      const lineIndex = Math.floor(index / 3);
-
-      if (index > 0) {
-        if (lineWordIndex === 0) {
-          output.push("\n");
-          outputLength += 1;
-          if (lineIndex > 0 && lineIndex % 4 === 0) {
-            output.push("\n");
-            outputLength += 1;
-          }
-        } else {
-          output.push(" ");
-          outputLength += 1;
-        }
-      }
-
-      const wordStart = outputLength;
-      if (cursorWordIndex === index) mappedCursor = wordStart + cursorOffset;
-      output.push(word);
-      outputLength += word.length;
-      writtenWords += 1;
-      if (cursorWordIndex === null && completeWordsBeforeCursor === writtenWords) {
-        mappedCursor = outputLength;
-      }
-    });
-
-    const formatted = output.join("");
-    return {
-      value: formatted,
-      cursor: Math.min(mappedCursor ?? formatted.length, formatted.length),
-    };
-  };
-
   // Insert text at the current cursor position; restore cursor + focus.
-  // Also enforces the "blank line after every 4 non-empty lines" rule
-  // by inspecting the surrounding text — never double-inserts.
+  // No word-grouping / line rules — natural flow only.
   const insertAtCursor = (text: string) => {
     const ta = textareaRef.current;
     const current = transcriptRef.current;
@@ -221,12 +158,10 @@ const Index = () => {
     const insertion = trimDuplicatePrefix(text, before);
     if (!insertion) return;
 
-    const inserted = before + insertion + after;
-    const rawPos = safeStart + insertion.length;
-    const formatted = formatStructuredText(inserted, rawPos);
-    setTranscript(formatted.value);
-    transcriptRef.current = formatted.value;
-    const newPos = formatted.cursor;
+    const next = before + insertion + after;
+    const newPos = safeStart + insertion.length;
+    setTranscript(next);
+    transcriptRef.current = next;
     cursorRef.current = { start: newPos, end: newPos };
     requestAnimationFrame(() => {
       if (ta) {
@@ -239,13 +174,9 @@ const Index = () => {
   const handleTextChange = (value: string) => {
     const ta = textareaRef.current;
     const cursor = ta?.selectionStart ?? value.length;
-    const formatted = formatStructuredText(value, cursor);
-    setTranscript(formatted.value);
-    transcriptRef.current = formatted.value;
-    cursorRef.current = { start: formatted.cursor, end: formatted.cursor };
-    requestAnimationFrame(() => {
-      if (ta) ta.setSelectionRange(formatted.cursor, formatted.cursor);
-    });
+    setTranscript(value);
+    transcriptRef.current = value;
+    cursorRef.current = { start: cursor, end: cursor };
   };
 
   // Expose the latest insertAtCursor to the speech hook callbacks.
