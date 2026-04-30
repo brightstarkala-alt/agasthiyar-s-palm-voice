@@ -214,7 +214,7 @@ export function useTamilSpeech({
   useEffect(
     () => () => {
       clearPauseTimer();
-      clearRestartTimer();
+      clearSilenceStopTimer();
       manualStopRef.current = true;
       recognitionRef.current?.abort();
     },
