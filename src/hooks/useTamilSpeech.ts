@@ -118,9 +118,11 @@ export function useTamilSpeech({
     // Guard: never start a second instance while one is already active/starting.
     if (listeningRef.current || startingRef.current) return;
     try {
-      clearRestartTimer();
+      clearPauseTimer();
+      clearSilenceStopTimer();
       setInterim("");
       processedResultsRef.current.clear();
+      lastFinalRef.current = { text: "", time: 0 };
       manualStopRef.current = false;
       startingRef.current = true;
 
@@ -128,26 +130,15 @@ export function useTamilSpeech({
         startingRef.current = false;
         listeningRef.current = true;
         setIsListening(true);
+        scheduleSilenceStop();
       };
       rec.onend = () => {
         startingRef.current = false;
         listeningRef.current = false;
         setIsListening(false);
         setInterim("");
-        // Do NOT clear the pause timer here — a natural end IS a pause and
-        // should still let the silence callback fire once.
-        if (!manualStopRef.current) {
-          clearRestartTimer();
-          restartTimerRef.current = window.setTimeout(() => {
-            if (manualStopRef.current || listeningRef.current || startingRef.current) return;
-            try {
-              startingRef.current = true;
-              rec.start();
-            } catch {
-              startingRef.current = false;
-            }
-          }, 350);
-        }
+        clearSilenceStopTimer();
+        // Do NOT auto-restart — only the user toggling the mic restarts.
       };
       rec.onerror = (e: SpeechRecognitionErrorEvent) => {
         if (e.error === "no-speech") return;
