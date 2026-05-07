@@ -102,12 +102,14 @@ export function useTamilSpeech({
       const ext = mimeTypeRef.current.includes("mp4") ? "mp4" : "webm";
       formData.append("file", blob, `chunk.${ext}`);
 
+      console.log("Sending chunk to Whisper API");
       const response = await fetch(WHISPER_ENDPOINT, {
         method: "POST",
         body: formData,
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = (await response.json()) as { text?: string };
+      console.log("Whisper response:", data);
       const text = (data?.text ?? "").trim();
       if (text) {
         onFinalRef.current?.(text);
