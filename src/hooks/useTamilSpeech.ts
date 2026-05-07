@@ -4,25 +4,23 @@ interface UseTamilSpeechOptions {
   onError?: (message: string) => void;
   /** Called once for every transcribed chunk returned by the Whisper API. */
   onFinalText?: (chunk: string) => void;
-  /** Called when a ~2s silence pause is detected (debounced, fires once per pause). */
+  /** Reserved for parity with the previous hook surface. Not invoked. */
   onPause?: () => void;
 }
 
 const WHISPER_ENDPOINT = "https://voiceapi.brightstar-es.com/transcribe";
-const CHUNK_MS = 2000;
+const CHUNK_MS = 3000;
 
 /**
  * Tamil speech-to-text via custom Whisper API.
  *
- * Captures audio with MediaRecorder in 2-second chunks, POSTs each chunk as
- * multipart/form-data to the Whisper endpoint, and forwards the returned text
- * incrementally through onFinalText. The public surface mirrors the previous
- * Web Speech API hook so the UI does not need to change.
+ * Captures audio with MediaRecorder in fixed-length chunks and POSTs each
+ * chunk to the Whisper endpoint. The transcribed text is forwarded through
+ * onFinalText so the UI can append it. No browser SpeechRecognition is used.
  */
 export function useTamilSpeech({
   onError,
   onFinalText,
-  onPause,
 }: UseTamilSpeechOptions = {}) {
   const [isListening, setIsListening] = useState(false);
   const [isSupported, setIsSupported] = useState(true);
@@ -31,20 +29,14 @@ export function useTamilSpeech({
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const mimeTypeRef = useRef<string>("audio/webm");
-  const pauseTimerRef = useRef<number | null>(null);
-  const pauseFiredRef = useRef<boolean>(true);
   const inflightRef = useRef<number>(0);
-  const stoppingRef = useRef<boolean>(false);
 
   const onFinalRef = useRef(onFinalText);
-  const onPauseRef = useRef(onPause);
   const onErrorRef = useRef(onError);
   useEffect(() => {
     onFinalRef.current = onFinalText;
-    onPauseRef.current = onPause;
     onErrorRef.current = onError;
-  }, [onFinalText, onPause, onError]);
+  }, [onFinalText, onError]);
 
   useEffect(() => {
     if (
@@ -56,82 +48,8 @@ export function useTamilSpeech({
     }
   }, []);
 
-  const clearPauseTimer = () => {
-    if (pauseTimerRef.current) {
-      window.clearTimeout(pauseTimerRef.current);
-      pauseTimerRef.current = null;
-    }
-  };
-
-  const schedulePause = useCallback(() => {
-    clearPauseTimer();
-    pauseFiredRef.current = false;
-    pauseTimerRef.current = window.setTimeout(() => {
-      if (!pauseFiredRef.current) {
-        pauseFiredRef.current = true;
-        onPauseRef.current?.();
-      }
-    }, 2000);
-  }, []);
-
-  const pickMimeType = (): string => {
-    const candidates = [
-      "audio/webm;codecs=opus",
-      "audio/webm",
-      "audio/ogg;codecs=opus",
-      "audio/mp4",
-    ];
-    for (const t of candidates) {
-      if (
-        typeof MediaRecorder !== "undefined" &&
-        MediaRecorder.isTypeSupported &&
-        MediaRecorder.isTypeSupported(t)
-      ) {
-        return t;
-      }
-    }
-    return "";
-  };
-
-  const sendChunk = useCallback(async (blob: Blob, attempt = 0): Promise<void> => {
-    if (!blob || blob.size < 1024) return; // skip tiny/empty chunks
-    inflightRef.current += 1;
-    setInterim("transcribing...");
-    try {
-      const formData = new FormData();
-      const ext = mimeTypeRef.current.includes("mp4") ? "mp4" : "webm";
-      formData.append("file", blob, `chunk.${ext}`);
-
-      console.log("Sending chunk to Whisper API");
-      const response = await fetch(WHISPER_ENDPOINT, {
-        method: "POST",
-        body: formData,
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = (await response.json()) as { text?: string };
-      console.log("Whisper response:", data);
-      const text = (data?.text ?? "").trim();
-      if (text) {
-        onFinalRef.current?.(text);
-        schedulePause();
-      }
-    } catch (err) {
-      if (attempt < 1) {
-        // single retry
-        await new Promise((r) => setTimeout(r, 400));
-        inflightRef.current -= 1;
-        return sendChunk(blob, attempt + 1);
-      }
-      console.error("Whisper transcribe failed", err);
-      onErrorRef.current?.("ஒலியை அனுப்ப முடியவில்லை. மீண்டும் முயற்சிக்கவும்.");
-    } finally {
-      inflightRef.current = Math.max(0, inflightRef.current - 1);
-      if (inflightRef.current === 0) setInterim("");
-    }
-  }, [schedulePause]);
-
   const start = useCallback(async () => {
-    if (mediaRecorderRef.current || stoppingRef.current) return;
+    if (mediaRecorderRef.current) return;
     if (!navigator.mediaDevices || typeof window.MediaRecorder === "undefined") {
       onErrorRef.current?.(
         "உங்கள் உலாவி ஒலிப் பதிவை ஆதரிக்கவில்லை. Chrome ஐ பயன்படுத்தவும்."
@@ -141,26 +59,44 @@ export function useTamilSpeech({
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      const mimeType = pickMimeType();
-      mimeTypeRef.current = mimeType || "audio/webm";
-      const recorder = mimeType
-        ? new MediaRecorder(stream, { mimeType })
-        : new MediaRecorder(stream);
+      const recorder = new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
 
-      recorder.ondataavailable = (event: BlobEvent) => {
+      recorder.ondataavailable = async (event: BlobEvent) => {
         if (event.data && event.data.size > 0) {
-          void sendChunk(event.data);
+          console.log("Sending chunk");
+          const formData = new FormData();
+          formData.append("file", event.data, "chunk.webm");
+          inflightRef.current += 1;
+          setInterim("transcribing...");
+          try {
+            const response = await fetch(WHISPER_ENDPOINT, {
+              method: "POST",
+              body: formData,
+            });
+            const data = (await response.json()) as { text?: string };
+            console.log("Whisper response:", data);
+            const text = (data?.text ?? "").trim();
+            if (text) {
+              onFinalRef.current?.(text);
+            }
+          } catch (err) {
+            console.error("Whisper upload failed:", err);
+            onErrorRef.current?.("ஒலியை அனுப்ப முடியவில்லை.");
+          } finally {
+            inflightRef.current = Math.max(0, inflightRef.current - 1);
+            if (inflightRef.current === 0) setInterim("");
+          }
         }
       };
+
       recorder.onerror = () => {
         onErrorRef.current?.("பதிவில் பிழை ஏற்பட்டது.");
       };
+
       recorder.onstop = () => {
-        stoppingRef.current = false;
         setIsListening(false);
         setInterim("");
-        clearPauseTimer();
         streamRef.current?.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
         mediaRecorderRef.current = null;
@@ -168,7 +104,6 @@ export function useTamilSpeech({
 
       recorder.start(CHUNK_MS);
       setIsListening(true);
-      schedulePause();
     } catch (err) {
       console.error(err);
       const name = (err as { name?: string })?.name;
@@ -180,18 +115,16 @@ export function useTamilSpeech({
         onErrorRef.current?.("குரல் பதிவைத் தொடங்க முடியவில்லை.");
       }
     }
-  }, [schedulePause, sendChunk]);
+  }, []);
 
   const stop = useCallback(() => {
     const rec = mediaRecorderRef.current;
     if (!rec) return;
-    stoppingRef.current = true;
     try {
       if (rec.state !== "inactive") rec.stop();
     } catch {
       /* noop */
     }
-    clearPauseTimer();
   }, []);
 
   const reset = useCallback(() => {
@@ -201,7 +134,6 @@ export function useTamilSpeech({
 
   useEffect(
     () => () => {
-      clearPauseTimer();
       try {
         mediaRecorderRef.current?.stop();
       } catch {
