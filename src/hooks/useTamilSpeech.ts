@@ -2,22 +2,22 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 interface UseTamilSpeechOptions {
   onError?: (message: string) => void;
-  /** Called once for every FINAL chunk produced by the recognizer. */
+  /** Called once for every transcribed chunk returned by the Whisper API. */
   onFinalText?: (chunk: string) => void;
   /** Called when a ~2s silence pause is detected (debounced, fires once per pause). */
   onPause?: () => void;
 }
 
+const WHISPER_ENDPOINT = "http://135.181.106.14:8000/transcribe";
+const CHUNK_MS = 2000;
+
 /**
- * Tamil speech recognition hook.
+ * Tamil speech-to-text via custom Whisper API.
  *
- * Responsibilities (kept minimal & stable):
- *  - Start / stop Web Speech API in ta-IN.
- *  - Emit ONLY final results via onFinalText (interim is exposed read-only for UI hints).
- *  - Debounced onPause callback (single fire per silence window).
- *
- * Text shaping (cursor insertion, line rules, dedup) is handled by the consumer
- * so it can target the actual cursor position in the textarea.
+ * Captures audio with MediaRecorder in 2-second chunks, POSTs each chunk as
+ * multipart/form-data to the Whisper endpoint, and forwards the returned text
+ * incrementally through onFinalText. The public surface mirrors the previous
+ * Web Speech API hook so the UI does not need to change.
  */
 export function useTamilSpeech({
   onError,
@@ -29,17 +29,14 @@ export function useTamilSpeech({
   const [interim, setInterim] = useState("");
   const [transcript, setTranscript] = useState("");
 
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const mimeTypeRef = useRef<string>("audio/webm");
   const pauseTimerRef = useRef<number | null>(null);
-  const silenceStopTimerRef = useRef<number | null>(null);
   const pauseFiredRef = useRef<boolean>(true);
-  const listeningRef = useRef<boolean>(false);
-  const startingRef = useRef<boolean>(false);
-  const manualStopRef = useRef<boolean>(true);
-  const processedResultsRef = useRef<Map<string, number>>(new Map());
-  const lastFinalRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
+  const inflightRef = useRef<number>(0);
+  const stoppingRef = useRef<boolean>(false);
 
-  // Stable refs to latest callbacks so we don't rebuild handlers each render.
   const onFinalRef = useRef(onFinalText);
   const onPauseRef = useRef(onPause);
   const onErrorRef = useRef(onError);
@@ -50,19 +47,13 @@ export function useTamilSpeech({
   }, [onFinalText, onPause, onError]);
 
   useEffect(() => {
-    const SR =
-      (window as unknown as Window).SpeechRecognition ||
-      (window as unknown as Window).webkitSpeechRecognition;
-    if (!SR) {
+    if (
+      typeof window === "undefined" ||
+      !navigator.mediaDevices ||
+      typeof window.MediaRecorder === "undefined"
+    ) {
       setIsSupported(false);
-      return;
     }
-    const rec = new SR();
-    rec.continuous = true;
-    rec.interimResults = false;
-    rec.lang = "ta-IN";
-    rec.maxAlternatives = 1;
-    recognitionRef.current = rec;
   }, []);
 
   const clearPauseTimer = () => {
@@ -71,30 +62,6 @@ export function useTamilSpeech({
       pauseTimerRef.current = null;
     }
   };
-
-  const clearSilenceStopTimer = () => {
-    if (silenceStopTimerRef.current) {
-      window.clearTimeout(silenceStopTimerRef.current);
-      silenceStopTimerRef.current = null;
-    }
-  };
-
-  const stopInternal = () => {
-    manualStopRef.current = true;
-    try {
-      recognitionRef.current?.stop();
-    } catch {
-      try { recognitionRef.current?.abort(); } catch { /* noop */ }
-    }
-  };
-
-  const scheduleSilenceStop = useCallback(() => {
-    clearSilenceStopTimer();
-    silenceStopTimerRef.current = window.setTimeout(() => {
-      // 5s of silence — stop recording, do NOT auto-restart.
-      stopInternal();
-    }, 5000);
-  }, []);
 
   const schedulePause = useCallback(() => {
     clearPauseTimer();
@@ -107,99 +74,120 @@ export function useTamilSpeech({
     }, 2000);
   }, []);
 
-  const start = useCallback(() => {
-    const rec = recognitionRef.current;
-    if (!rec) {
+  const pickMimeType = (): string => {
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/ogg;codecs=opus",
+      "audio/mp4",
+    ];
+    for (const t of candidates) {
+      if (
+        typeof MediaRecorder !== "undefined" &&
+        MediaRecorder.isTypeSupported &&
+        MediaRecorder.isTypeSupported(t)
+      ) {
+        return t;
+      }
+    }
+    return "";
+  };
+
+  const sendChunk = useCallback(async (blob: Blob, attempt = 0): Promise<void> => {
+    if (!blob || blob.size < 1024) return; // skip tiny/empty chunks
+    inflightRef.current += 1;
+    setInterim("transcribing...");
+    try {
+      const formData = new FormData();
+      const ext = mimeTypeRef.current.includes("mp4") ? "mp4" : "webm";
+      formData.append("file", blob, `chunk.${ext}`);
+
+      const response = await fetch(WHISPER_ENDPOINT, {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = (await response.json()) as { text?: string };
+      const text = (data?.text ?? "").trim();
+      if (text) {
+        onFinalRef.current?.(text);
+        schedulePause();
+      }
+    } catch (err) {
+      if (attempt < 1) {
+        // single retry
+        await new Promise((r) => setTimeout(r, 400));
+        inflightRef.current -= 1;
+        return sendChunk(blob, attempt + 1);
+      }
+      console.error("Whisper transcribe failed", err);
+      onErrorRef.current?.("ஒலியை அனுப்ப முடியவில்லை. மீண்டும் முயற்சிக்கவும்.");
+    } finally {
+      inflightRef.current = Math.max(0, inflightRef.current - 1);
+      if (inflightRef.current === 0) setInterim("");
+    }
+  }, [schedulePause]);
+
+  const start = useCallback(async () => {
+    if (mediaRecorderRef.current || stoppingRef.current) return;
+    if (!navigator.mediaDevices || typeof window.MediaRecorder === "undefined") {
       onErrorRef.current?.(
-        "உங்கள் உலாவி குரல் அறிதலை ஆதரிக்கவில்லை. Chrome ஐ பயன்படுத்தவும்."
+        "உங்கள் உலாவி ஒலிப் பதிவை ஆதரிக்கவில்லை. Chrome ஐ பயன்படுத்தவும்."
       );
       return;
     }
-    // Guard: never start a second instance while one is already active/starting.
-    if (listeningRef.current || startingRef.current) return;
     try {
-      clearPauseTimer();
-      clearSilenceStopTimer();
-      setInterim("");
-      processedResultsRef.current.clear();
-      lastFinalRef.current = { text: "", time: 0 };
-      manualStopRef.current = false;
-      startingRef.current = true;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mimeType = pickMimeType();
+      mimeTypeRef.current = mimeType || "audio/webm";
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
 
-      rec.onstart = () => {
-        startingRef.current = false;
-        listeningRef.current = true;
-        setIsListening(true);
-        scheduleSilenceStop();
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data && event.data.size > 0) {
+          void sendChunk(event.data);
+        }
       };
-      rec.onend = () => {
-        startingRef.current = false;
-        listeningRef.current = false;
+      recorder.onerror = () => {
+        onErrorRef.current?.("பதிவில் பிழை ஏற்பட்டது.");
+      };
+      recorder.onstop = () => {
+        stoppingRef.current = false;
         setIsListening(false);
         setInterim("");
-        clearSilenceStopTimer();
-        // Do NOT auto-restart — only the user toggling the mic restarts.
+        clearPauseTimer();
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        mediaRecorderRef.current = null;
       };
-      rec.onerror = (e: SpeechRecognitionErrorEvent) => {
-        if (e.error === "no-speech") return;
-        if (e.error === "not-allowed") {
-          manualStopRef.current = true;
-          onErrorRef.current?.("மைக்ரோஃபோன் அனுமதி மறுக்கப்பட்டது.");
-        } else if (e.error === "audio-capture") {
-          manualStopRef.current = true;
-          onErrorRef.current?.("மைக்ரோஃபோன் கிடைக்கவில்லை.");
-        } else {
-          onErrorRef.current?.(`பிழை: ${e.error}`);
-        }
-      };
-      rec.onresult = (event: SpeechRecognitionEvent) => {
-        let interimText = "";
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const result = event.results[i];
-          const text = result[0].transcript;
-          if (result.isFinal) {
-            const cleaned = text.replace(/\s+/g, " ").trim();
-            if (!cleaned) continue;
 
-            const now = Date.now();
-            const key = `${i}:${cleaned}`;
-            processedResultsRef.current.forEach((time, storedKey) => {
-              if (now - time > 5000) processedResultsRef.current.delete(storedKey);
-            });
-            const repeatedResult = processedResultsRef.current.has(key);
-            const rapidDuplicate =
-              lastFinalRef.current.text === cleaned && now - lastFinalRef.current.time < 1500;
-            if (!repeatedResult && !rapidDuplicate) {
-              processedResultsRef.current.set(key, now);
-              lastFinalRef.current = { text: cleaned, time: now };
-              onFinalRef.current?.(cleaned);
-            }
-          } else {
-            interimText += text;
-          }
-        }
-        setInterim(interimText);
-        // Any activity restarts the pause + silence-stop windows.
-        schedulePause();
-        scheduleSilenceStop();
-      };
-      rec.start();
+      recorder.start(CHUNK_MS);
+      setIsListening(true);
+      schedulePause();
     } catch (err) {
-      startingRef.current = false;
-      listeningRef.current = false;
-      manualStopRef.current = true;
       console.error(err);
-      onErrorRef.current?.("குரல் அறிதலைத் தொடங்க முடியவில்லை.");
+      const name = (err as { name?: string })?.name;
+      if (name === "NotAllowedError") {
+        onErrorRef.current?.("மைக்ரோஃபோன் அனுமதி மறுக்கப்பட்டது.");
+      } else if (name === "NotFoundError") {
+        onErrorRef.current?.("மைக்ரோஃபோன் கிடைக்கவில்லை.");
+      } else {
+        onErrorRef.current?.("குரல் பதிவைத் தொடங்க முடியவில்லை.");
+      }
     }
-  }, [schedulePause, scheduleSilenceStop]);
+  }, [schedulePause, sendChunk]);
 
   const stop = useCallback(() => {
-    manualStopRef.current = true;
-    clearSilenceStopTimer();
+    const rec = mediaRecorderRef.current;
+    if (!rec) return;
+    stoppingRef.current = true;
     try {
-      recognitionRef.current?.stop();
+      if (rec.state !== "inactive") rec.stop();
     } catch {
-      recognitionRef.current?.abort();
+      /* noop */
     }
     clearPauseTimer();
   }, []);
@@ -207,16 +195,17 @@ export function useTamilSpeech({
   const reset = useCallback(() => {
     setTranscript("");
     setInterim("");
-    processedResultsRef.current.clear();
-    lastFinalRef.current = { text: "", time: 0 };
   }, []);
 
   useEffect(
     () => () => {
       clearPauseTimer();
-      clearSilenceStopTimer();
-      manualStopRef.current = true;
-      recognitionRef.current?.abort();
+      try {
+        mediaRecorderRef.current?.stop();
+      } catch {
+        /* noop */
+      }
+      streamRef.current?.getTracks().forEach((t) => t.stop());
     },
     []
   );
