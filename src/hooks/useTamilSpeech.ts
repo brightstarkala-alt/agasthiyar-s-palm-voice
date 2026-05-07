@@ -8,7 +8,7 @@ interface UseTamilSpeechOptions {
   onPause?: () => void;
 }
 
-const WHISPER_ENDPOINT = "https://medieval-respondent-sin-whats.trycloudflare.com/transcribe";
+const WHISPER_ENDPOINT = "https://voiceapi.brightstar-es.com/transcribe";
 const CHUNK_MS = 2000;
 
 /**
