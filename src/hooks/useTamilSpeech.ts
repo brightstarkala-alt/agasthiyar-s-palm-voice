@@ -77,10 +77,10 @@ export function useTamilSpeech({
             console.log("Response received");
             const data = (await response.json()) as { text?: string };
             console.log("Whisper result:", data);
-            const text = (data?.text ?? "").trim();
-            if (text) {
-              setTranscript((prev) => (prev ? prev + " " + text : text));
-              onFinalRef.current?.(text);
+            if (data?.text) {
+              console.log("Received transcript:", data.text);
+              setTranscript((prev) => prev + " " + data.text);
+              onFinalRef.current?.(data.text);
             }
           } catch (err) {
             console.error("Whisper upload failed:", err);
