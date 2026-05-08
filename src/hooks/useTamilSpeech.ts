@@ -64,7 +64,7 @@ export function useTamilSpeech({
 
       recorder.ondataavailable = async (event: BlobEvent) => {
         if (event.data && event.data.size > 0) {
-          console.log("Sending chunk");
+          console.log("Uploading chunk to Whisper");
           const formData = new FormData();
           formData.append("file", event.data, "chunk.webm");
           inflightRef.current += 1;
@@ -74,10 +74,12 @@ export function useTamilSpeech({
               method: "POST",
               body: formData,
             });
+            console.log("Response received");
             const data = (await response.json()) as { text?: string };
-            console.log("Whisper response:", data);
+            console.log("Whisper result:", data);
             const text = (data?.text ?? "").trim();
             if (text) {
+              setTranscript((prev) => (prev ? prev + " " + text : text));
               onFinalRef.current?.(text);
             }
           } catch (err) {
