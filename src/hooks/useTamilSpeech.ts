@@ -74,16 +74,16 @@ export function useTamilSpeech({
               method: "POST",
               body: formData,
             });
-            console.log("Response received");
             const data = (await response.json()) as { text?: string };
-            console.log("Whisper result:", data);
-            if (data?.text) {
-              console.log("Received transcript:", data.text);
-              setTranscript((prev) => prev + " " + data.text);
-              onFinalRef.current?.(data.text);
+            console.log("API response:", data);
+            if (data?.text && data.text.trim() !== "") {
+              setTranscript((prev) =>
+                prev ? prev + "\n" + data.text : (data.text as string)
+              );
+              console.log("Transcript updated");
             }
           } catch (err) {
-            console.error("Whisper upload failed:", err);
+            console.error("Whisper upload/parse failed:", err);
             onErrorRef.current?.("ஒலியை அனுப்ப முடியவில்லை.");
           } finally {
             inflightRef.current = Math.max(0, inflightRef.current - 1);
