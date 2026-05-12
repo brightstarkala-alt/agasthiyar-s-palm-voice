@@ -9,7 +9,7 @@ interface UseTamilSpeechOptions {
 }
 
 const WHISPER_ENDPOINT = "https://voiceapi.brightstar-es.com/transcribe";
-const CHUNK_MS = 3000;
+const CHUNK_MS = 2000;
 
 /**
  * Tamil speech-to-text via custom Whisper API.

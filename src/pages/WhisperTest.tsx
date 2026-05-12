@@ -42,7 +42,7 @@ const WhisperTest = () => {
         }
       };
 
-      mediaRecorder.start(3000);
+      mediaRecorder.start(2000);
       setIsRecording(true);
     } catch (err) {
       console.error(err);
